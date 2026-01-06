@@ -1,116 +1,42 @@
-import matplotlib.pyplot as plt
-from metpy.plots import SkewT
-from metpy.units import units
-import metpy.calc as mpcalc
-from meteodatalab import ogd_api
+import os
 import xarray as xr
-import numpy as np
-import datetime
+# ... (rest of your imports)
 
-# --- Configuration ---
-LAT_TARGET, LON_TARGET = 46.81, 6.94  # Payerne
-CORE_VARS = ["T", "U", "V", "P"] 
-
-def get_nearest_profile(ds, lat_target, lon_target):
-    """Correctly extracts a vertical profile from regular or native ICON grids."""
-    if ds is None: return None
-    data = ds if isinstance(ds, xr.DataArray) else ds[list(ds.data_vars)[0]]
-    
-    # 1. Identify coordinate and dimension names
-    lat_coord = 'latitude' if 'latitude' in data.coords else 'lat'
-    lon_coord = 'longitude' if 'longitude' in data.coords else 'lon'
-    
-    # 2. Find the horizontal dimension (usually 'ncells' or 'grid_index')
-    horiz_dims = data.coords[lat_coord].dims
-    
-    # 3. Calculate distance to find the closest horizontal point
-    dist = (data[lat_coord] - lat_target)**2 + (data[lon_coord] - lon_target)**2
-    flat_idx = dist.argmin().values
-    
-    # 4. Extract column: select the index on the horizontal dimension only
-    # This keeps all levels in the vertical dimension(s)
-    if len(horiz_dims) == 1:
-        # Native ICON Grid (1D horizontal)
-        profile = data.isel({horiz_dims[0]: flat_idx})
-    else:
-        # Regular Grid (2D horizontal)
-        profile = data.stack(gp=horiz_dims).isel(gp=flat_idx)
-        
-    return profile.squeeze().compute()
+DATA_DIR = "cache_data"
+os.makedirs(DATA_DIR, exist_ok=True)
 
 def main():
-    print("Fetching ICON-CH1 data from MeteoSwiss...")
-    now = datetime.datetime.now(datetime.timezone.utc)
-    base_hour = (now.hour // 3) * 3
-    latest_run = now.replace(hour=base_hour, minute=0, second=0, microsecond=0)
-    
-    # Try the last 4 runs to find complete data
-    times_to_try = [latest_run - datetime.timedelta(hours=i*3) for i in range(4)]
-    
+    print("Fetching ICON-CH1 data...")
+    # ... (your existing time calculation logic)
+
     success, profile_data, ref_time_final = False, {}, None
     for ref_time in times_to_try:
-        print(f"--- Attempting Run: {ref_time.strftime('%H:%M')} UTC ---")
-        try:
-            for var in CORE_VARS:
-                req = ogd_api.Request(collection="ogd-forecasting-icon-ch1", variable=var,
-                                      reference_datetime=ref_time, horizon="P0DT0H", perturbed=False)
-                res = get_nearest_profile(ogd_api.get_from_ogd(req), LAT_TARGET, LON_TARGET)
-                if res is None or res.size < 5: raise ValueError(f"Empty {var}")
-                profile_data[var] = res
-            
-            # Fetch Humidity with fallback
-            for hum_var in ["RELHUM", "QV"]:
-                try:
-                    req_h = ogd_api.Request(collection="ogd-forecasting-icon-ch1", variable=hum_var,
-                                            reference_datetime=ref_time, horizon="P0DT0H", perturbed=False)
-                    res_h = get_nearest_profile(ogd_api.get_from_ogd(req_h), LAT_TARGET, LON_TARGET)
-                    if res_h is not None and res_h.size >= 5:
-                        profile_data["HUM"], profile_data["HUM_TYPE"] = res_h, hum_var
-                        break
-                except: continue
-            
-            if "HUM" not in profile_data: raise ValueError("No Humidity")
+        time_str = ref_time.strftime('%Y%m%d%H%M')
+        cache_file = os.path.join(DATA_DIR, f"profile_{time_str}.nc")
+        
+        # --- CACHING LOGIC ---
+        if os.path.exists(cache_file):
+            print(f"Loading cached data for {time_str}...")
+            cached_ds = xr.open_dataset(cache_file)
+            # Map variables back to your dictionary
+            for var in CORE_VARS + ["HUM"]:
+                profile_data[var] = cached_ds[var]
+            profile_data["HUM_TYPE"] = cached_ds.attrs["HUM_TYPE"]
             success, ref_time_final = True, ref_time
-            break 
-        except Exception as e: print(f"Run incomplete: {e}")
+            break
 
-    if not success:
-        print("Error: No complete model runs found.")
-        return
-
-    # --- Unit Conversion & Sorting ---
-    # Sort ground-to-sky by pressure for correct rendering
-    p = profile_data["P"].values * units.Pa
-    t = profile_data["T"].values * units.K
-    u = profile_data["U"].values * units('m/s')
-    v = profile_data["V"].values * units('m/s')
-    
-    if profile_data["HUM_TYPE"] == "RELHUM":
-        td = mpcalc.dewpoint_from_relative_humidity(t, profile_data["HUM"].values / 100.0)
-    else:
-        td = mpcalc.dewpoint_from_specific_humidity(p, t, profile_data["HUM"].values * units('kg/kg'))
-
-    inds = p.argsort()[::-1] # Sort descending (1000hPa -> 100hPa)
-    p, t, td, u, v = p[inds], t[inds], td[inds], u[inds], v[inds]
-
-    # --- Plotting ---
-    fig = plt.figure(figsize=(10, 12))
-    skew = SkewT(fig, rotation=45)
-    
-    skew.plot(p.to(units.hPa), t.to(units.degC), 'r', linewidth=2.5, label='Temperature')
-    skew.plot(p.to(units.hPa), td.to(units.degC), 'g', linewidth=2.5, label='Dewpoint')
-    skew.plot_barbs(p.to(units.hPa)[::3], u[::3], v[::3]) # Decimate for clarity
-    
-    skew.plot_dry_adiabats(alpha=0.1, color='red')
-    skew.plot_moist_adiabats(alpha=0.1, color='blue')
-    skew.plot_mixing_lines(alpha=0.1, color='green')
-    
-    skew.ax.set_ylim(1050, 100)
-    skew.ax.set_xlim(-40, 40)
-    plt.title(f"ICON-CH1 Sounding | {ref_time_final.strftime('%Y-%m-%d %H:%M')} UTC", fontsize=14)
-    plt.legend(loc='upper left')
-    plt.savefig("latest_skewt.png", bbox_inches='tight', dpi=150)
-    print("Success! Skew-T saved.")
-
-if __name__ == "__main__":
-    main()
+        print(f"--- Attempting Download: {ref_time.strftime('%H:%M')} UTC ---")
+        try:
+            # (Your existing download logic)
+            # ... loop through variables ...
+            
+            # --- SAVE TO CACHE IF SUCCESSFUL ---
+            if success:
+                # Combine into one dataset for easy storage
+                ds_to_save = xr.Dataset(profile_data)
+                ds_to_save.attrs["HUM_TYPE"] = profile_data["HUM_TYPE"]
+                ds_to_save.to_netcdf(cache_file)
+                print(f"Saved to cache: {cache_file}")
+                break 
+        except Exception as e: 
+            print(f"Run incomplete: {e}")
