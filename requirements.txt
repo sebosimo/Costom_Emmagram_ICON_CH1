@@ -1,0 +1,6 @@
+metpy
+xarray
+cfgrib
+requests
+meteodata-lab
+eccodes
