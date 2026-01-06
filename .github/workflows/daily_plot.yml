@@ -1,9 +1,9 @@
 name: Daily Weather Plot
 
 on:
-  workflow_dispatch:  # This adds the manual "Run" button to your Actions tab
+  workflow_dispatch:  # Manual trigger
   schedule:
-    - cron: '0 6 * * *' # Automatically runs at 06:00 UTC daily
+    - cron: '0 6 * * *' # 06:00 UTC daily
 
 jobs:
   build:
@@ -15,17 +15,28 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Recommended for meteodata-lab
+          python-version: '3.11'
+
+      # --- NEW: CACHE STEP ---
+      # This looks for a folder named 'cache_data'. 
+      # If found, it skips the download inside your script.
+      - name: Cache Weather Data
+        uses: actions/cache@v3
+        with:
+          path: cache_data
+          key: ${{ runner.os }}-weather-data-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-weather-data-
 
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libeccodes-dev # Required to read GRIB2 files
+          sudo apt-get install -y libeccodes-dev
 
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install metpy xarray cfgrib meteodata-lab pandas matplotlib
+          pip install metpy xarray cfgrib meteodata-lab pandas matplotlib netCDF4
 
       - name: Run Skew-T Script
         run: python generate_skewt.py
