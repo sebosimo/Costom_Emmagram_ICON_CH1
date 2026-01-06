@@ -1,42 +1,52 @@
 import os
-import xarray as xr
-# ... (rest of your imports)
+# ... (all your other imports)
 
-DATA_DIR = "cache_data"
-os.makedirs(DATA_DIR, exist_ok=True)
+# Configuration for caching
+CACHE_DIR = "cache_data"
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 def main():
     print("Fetching ICON-CH1 data...")
-    # ... (your existing time calculation logic)
-
+    now = datetime.datetime.now(datetime.timezone.utc)
+    base_hour = (now.hour // 3) * 3
+    latest_run = now.replace(hour=base_hour, minute=0, second=0, microsecond=0)
+    times_to_try = [latest_run - datetime.timedelta(hours=i*3) for i in range(4)]
+    
     success, profile_data, ref_time_final = False, {}, None
+
     for ref_time in times_to_try:
-        time_str = ref_time.strftime('%Y%m%d%H%M')
-        cache_file = os.path.join(DATA_DIR, f"profile_{time_str}.nc")
-        
-        # --- CACHING LOGIC ---
-        if os.path.exists(cache_file):
-            print(f"Loading cached data for {time_str}...")
-            cached_ds = xr.open_dataset(cache_file)
-            # Map variables back to your dictionary
+        time_tag = ref_time.strftime('%Y%m%d_%H%M')
+        cache_path = os.path.join(CACHE_DIR, f"profile_{time_tag}.nc")
+
+        # Check if we already have this data locally
+        if os.path.exists(cache_path):
+            print(f">>> Loading {time_tag} from CACHE...")
+            ds_cache = xr.open_dataset(cache_path)
             for var in CORE_VARS + ["HUM"]:
-                profile_data[var] = cached_ds[var]
-            profile_data["HUM_TYPE"] = cached_ds.attrs["HUM_TYPE"]
+                profile_data[var] = ds_cache[var]
+            profile_data["HUM_TYPE"] = ds_cache.attrs["HUM_TYPE"]
             success, ref_time_final = True, ref_time
             break
 
-        print(f"--- Attempting Download: {ref_time.strftime('%H:%M')} UTC ---")
+        print(f"--- Attempting Run: {ref_time.strftime('%H:%M')} UTC ---")
         try:
-            # (Your existing download logic)
-            # ... loop through variables ...
+            # ... (Your existing download logic) ...
+            # [Keep your loop for CORE_VARS and Humidity here]
             
-            # --- SAVE TO CACHE IF SUCCESSFUL ---
+            # If download was successful, save it to cache
             if success:
-                # Combine into one dataset for easy storage
-                ds_to_save = xr.Dataset(profile_data)
+                # Combine variables into a single dataset for storage
+                ds_to_save = xr.Dataset({v: profile_data[v] for v in CORE_VARS + ["HUM"]})
                 ds_to_save.attrs["HUM_TYPE"] = profile_data["HUM_TYPE"]
-                ds_to_save.to_netcdf(cache_file)
-                print(f"Saved to cache: {cache_file}")
-                break 
-        except Exception as e: 
+                ds_to_save.to_netcdf(cache_path)
+                print(f">>> Saved {time_tag} to cache.")
+                break
+
+        except Exception as e:
             print(f"Run incomplete: {e}")
+
+    if not success:
+        print("Error: No complete model runs found.")
+        return
+
+    # ... (Rest of your plotting code stays exactly the same) ...
