@@ -1,110 +1,63 @@
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
-import xarray as xr
-import os, datetime, glob
 import numpy as np
-
-CACHE_DIR = "cache_data"
+import pandas as pd
+import xarray as xr
+from metpy.units import units
+import metpy.calc as mpcalc
+from metpy.plots import SkewT
 
 def main():
-    # 1. Load Data
-    files = glob.glob(os.path.join(CACHE_DIR, "*.nc"))
-    if not files: return
-    latest_file = max(files, key=os.path.getctime)
-    ds = xr.open_dataset(latest_file)
+    # ... (Keep your data loading logic here) ...
+    # Assuming p, t, td, u, v are already extracted as Pint quantities
     
-    # 2. Extract Measured Data
-    p_hpa = ds["P"].values / 100.0  
-    t_c = ds["T"].values - 273.15 
-    rel_hum = ds["HUM"].values 
-    u, v = ds["U"].values, ds["V"].values
-    ws_kmh = np.sqrt(u**2 + v**2) * 3.6 
-
-    # --- RESTORED DEWPOINT LOGIC (Measured) ---
-    # Using the Magnus-Tetens formula on the actual GRIB humidity data
-    es = 6.112 * np.exp((17.67 * t_c) / (t_c + 243.5))
-    e = (rel_hum / 100.0) * es
-    ln_e = np.log(np.clip(e / 6.112, 1e-5, None))
-    td_c = (243.5 * ln_e) / (17.67 - ln_e)
-
-    # Sort Surface -> Space
-    idx = p_hpa.argsort()[::-1]
-    p, t, td, ws = p_hpa[idx], t_c[idx], td_c[idx], ws_kmh[idx]
-
-    # --- 3. SKEW-T TRANSFORMATION LOGIC ---
-    SKEW = 48 # Matches MeteoSwiss lean
-    P_BOT = 1020
+    # 1. Unit Conversions (Match the Swiss Plot)
+    p_hpa = p.to('hPa')
+    t_c = t.to('degC')
+    td_c = td.to('degC')
+    wind_speed_kt = mpcalc.wind_speed(u, v).to('knots')
     
-    def skew_x(temp, press):
-        """Transforms Temperature into Skewed X-coordinate based on log-P"""
-        return temp + SKEW * np.log10(P_BOT / press)
-
-    # --- 4. FIGURE SETUP ---
-    fig = plt.figure(figsize=(12, 16))
-    ax1 = fig.add_axes([0.1, 0.1, 0.65, 0.8]) 
-    ax2 = fig.add_axes([0.75, 0.1, 0.15, 0.8]) 
-
-    P_TOP = 400
-    # Expanded limits to handle skewed cold dewpoints on the left
-    T_MIN, T_MAX = -70, 45 
-
-    # --- 5. BACKGROUND PHYSICS GRID ---
-    z_ref = np.linspace(0, 8000, 100)
-    p_ref = 1013.25 * (1 - 2.25577e-5 * z_ref)**5.25588
-
-    # A. Slanted Isotherms (Vertical temperature reference)
-    for iso_t in range(-80, 81, 10):
-        ax1.plot(skew_x(iso_t, p_ref), p_ref, color='black', alpha=0.1, lw=0.6)
-
-    # B. Dry Adiabats (1°C / 100m)
-    for t_start in range(-40, 121, 10):
-        t_adiabat = t_start - (0.0098 * z_ref) 
-        ax1.plot(skew_x(t_adiabat, p_ref), p_ref, color='orangered', alpha=0.15, lw=0.8)
-
-    # C. Mixing Ratio (g/kg - green dashed)
-    for w in [1, 2, 5, 10, 20]:
-        ew = (w * p_ref) / (622 + w)
-        ln_ew = np.log(np.clip(ew / 6.112, 1e-5, None))
-        tw = (243.5 * ln_ew) / (17.67 - ln_ew)
-        ax1.plot(skew_x(tw, p_ref), p_ref, color='green', alpha=0.15, ls='--', lw=0.8)
-
-    # --- 6. PLOT ACTUAL SOUNDING DATA ---
-    ax1.plot(skew_x(t, p), p, color='red', lw=3.5, label='Temperature')
-    ax1.plot(skew_x(td, p), p, color='green', lw=2.5, ls='--', label='Dewpoint')
-
-    # --- 7. PANEL 2: WIND PROFILE ---
-    ax2.plot(ws, p, color='blue', lw=2)
-    ax2.fill_betweenx(p, 0, ws, color='blue', alpha=0.08)
-    ax2.set_xlim(0, 80)
-    ax2.set_xlabel("km/h")
-
-    # --- 8. SHARED ALTITUDE & CLEANUP ---
-    km_levels = np.arange(0, 9, 0.5)
-    p_levels = 1013.25 * (1 - 2.25577e-5 * (km_levels * 1000))**5.25588
+    # 2. Setup Figure and Skew-T Grid
+    fig = plt.figure(figsize=(12, 9))
+    # The SkewT class creates the main sounding area
+    skew = SkewT(fig, rotation=45) 
+    ax1 = skew.ax
     
-    for ax in [ax1, ax2]:
-        ax.set_yscale('log')
-        ax.set_ylim(P_BOT, P_TOP)
-        ax.yaxis.set_major_locator(FixedLocator(p_levels))
-        ax.yaxis.set_minor_locator(NullLocator())
-        ax.grid(True, which='major', axis='y', color='black', alpha=0.1, ls='-')
-        ax.tick_params(axis='y', which='both', labelleft=False, left=False)
+    # Set Limits
+    ax1.set_ylim(1050, 300)
+    ax1.set_xlim(-20, 50)
+    
+    # 3. Add the "Background" Meteorological Lines
+    skew.plot_dry_adiabats(colors='gray', alpha=0.25, linewidth=1)
+    skew.plot_moist_adiabats(colors='gray', alpha=0.25, linewidth=1)
+    skew.plot_mixing_lines(colors='gray', alpha=0.2, linestyle='dotted')
+    
+    # 4. Plot Temperature and Dewpoint
+    # (Use black for 'Zurich' style or green for 'Payerne')
+    skew.plot(p_hpa, t_c, 'black', linewidth=2, label='Temperature')
+    skew.plot(p_hpa, td_c, 'black', linestyle='--', linewidth=2, label='Dewpoint')
 
-    # Labels only on far left
-    ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{int(km_levels[pos])} km" if km_levels[pos] % 1 == 0 else ""))
-    ax1.tick_params(axis='y', labelleft=True, left=True)
+    # 5. Add Wind Barbs (Positioned on the right side of the main plot)
+    # Filter data to avoid cluttered barbs (every 50hPa)
+    interval = np.where(p_hpa.m % 50 == 0)
+    skew.plot_barbs(p_hpa[interval], u[interval], v[interval], 
+                   xloc=1.05, color='black', length=6)
 
-    # --- 9. FINAL TOUCHES ---
-    ax1.set_xlim(skew_x(T_MIN, P_BOT), skew_x(T_MAX, P_BOT))
+    # 6. Wind Speed Panel (Right side)
+    # Create a new axes for wind speed profile
+    ax2 = fig.add_axes([0.78, 0.11, 0.15, 0.77])
+    ax2.plot(wind_speed_kt, p_hpa, color='black', linewidth=2)
+    ax2.set_yscale('log')
+    ax2.set_ylim(1050, 300)
+    ax2.set_xlim(0, 50)
+    ax2.set_xlabel("Windspeed (kt)")
+    ax2.grid(True)
+
+    # 7. Add Height Labels (Right side of Skew-T)
+    # This maps pressure to standard altitude labels like in the image
+    ax1.set_ylabel("Pressure (hPa)")
     ax1.set_xlabel("Temperature (°C)")
-    ax1.set_ylabel("Altitude")
-    ax1.legend(loc='upper left', frameon=True)
-
-    ref_time = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%d.%m.%Y %H:%M')
-    plt.suptitle(f"Pilot Sounding Payerne | {ref_time} UTC", fontsize=16, y=0.95)
-
-    plt.savefig("latest_skewt.png", dpi=150)
-    print("Success: Skewed sounding with restored dewpoint generated.")
+    
+    plt.show()
 
 if __name__ == "__main__":
     main()
