@@ -34,29 +34,27 @@ def main():
     p_hpa, t, td, u, v = p[inds].to(units.hPa), t[inds], td[inds], u[inds], v[inds]
 
     # 3. Visualization Setup
-    # We use a very specific tall figure size (8x14)
+    # Force a very tall figure
     fig = plt.figure(figsize=(8, 14))
     
-    # We use 'rect' to give the plot its own defined space inside the figure
-    # This creates the vertical "pillar" look and prevents the right side from clipping
-    skew = SkewT(fig, rotation=30, rect=(0.12, 0.1, 0.70, 0.85))
+    # Set manual margins to force the tall aspect ratio
+    # left, bottom, right, top (0 to 1)
+    plt.subplots_adjust(left=0.15, bottom=0.08, right=0.85, top=0.92)
     
-    # Force auto aspect to ensure it fills our tall 'rect'
-    skew.ax.set_aspect('auto')
+    skew = SkewT(fig, rotation=30)
+    skew.ax.set_aspect('auto') # Fill the adjusted subplot area
     
     # --- RANGE ADJUSTMENTS ---
-    # Left cut: -40 (enough for dry dewpoints) 
-    # Right expand: 45 (enough for hot summer ground temps)
-    skew.ax.set_xlim(-40, 45)
-    
-    # Vertical range: 1020hPa to 400hPa (~7km)
+    # Shifted Right: -30 to +50 (Summer range)
+    skew.ax.set_xlim(-30, 50)
+    # Surface (1020) to ~7km (400)
     skew.ax.set_ylim(1020, 400) 
 
     # 4. Plot Data
     skew.plot(p_hpa, t, 'red', linewidth=3, label='Temperature')
     skew.plot(p_hpa, td, 'green', linewidth=3, label='Dewpoint')
     
-    # Place barbs strictly at the edge of the plot area
+    # Place barbs strictly inside the right margin
     skew.plot_barbs(p_hpa[::3], u[::3], v[::3], xloc=1.0)
     
     # 5. Supporting Adiabats
@@ -72,7 +70,6 @@ def main():
     skew.ax.yaxis.set_minor_locator(NullLocator()) 
     
     def km_formatter(x, pos):
-        # Identify exact km values from our list to prevent mismatch
         if pos < len(km_all):
             val = km_all[pos]
             if val % 1 == 0:
@@ -81,7 +78,7 @@ def main():
 
     skew.ax.yaxis.set_major_formatter(FuncFormatter(km_formatter))
     
-    # Stronger helper lines for every 0.5km step
+    # Vertical grid for easy km reading
     skew.ax.grid(True, which='major', axis='y', color='black', alpha=0.15, linestyle='-')
     
     skew.ax.set_ylabel("Altitude (km)")
@@ -89,12 +86,12 @@ def main():
     
     # 7. Metadata and Title
     ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
-    plt.title(f"Paragliding Sounding (Payerne) | {ref_time_str} UTC", fontsize=15, pad=30)
+    plt.title(f"Paragliding Sounding (Payerne) | {ref_time_str} UTC", fontsize=15, pad=25)
     skew.ax.legend(loc='upper left', frameon=True)
 
-    # 8. Save with enough padding for wind barbs
+    # 8. Save - Explicitly NO tight_layout to preserve our manual adjustments
     plt.savefig("latest_skewt.png", dpi=150)
-    print("Success: Tall-format summer-ready plot generated.")
+    print("Success: Tall Summer Sounding generated.")
 
 if __name__ == "__main__":
     main()
