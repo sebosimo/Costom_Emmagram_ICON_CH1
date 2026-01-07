@@ -1,6 +1,7 @@
 metpy
 xarray
 cfgrib
-requests
 meteodata-lab
-eccodes
+pandas
+matplotlib
+netCDF4
