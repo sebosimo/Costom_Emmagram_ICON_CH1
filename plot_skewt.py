@@ -29,7 +29,7 @@ def main():
 
     z = mpcalc.pressure_to_height_std(p).to(units.km)
     
-    # Scientific conversion to km/h using MetPy units
+    # Scientific conversion to km/h
     u_kmh = u_ms.to('km/h').m
     v_kmh = v_ms.to('km/h').m
     wind_speed_kmh = mpcalc.wind_speed(u_ms, v_ms).to('km/h').m
@@ -50,7 +50,6 @@ def main():
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
-    # Width 18"; wind panel doubled in size (ratio 3:1)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
                                    gridspec_kw={'width_ratios': [3, 1], 'wspace': 0})
     
@@ -68,23 +67,21 @@ def main():
     p_ref = mpcalc.height_to_pressure_std(z_ref)
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
-    # 1. Isotherms (Blue)
-    for temp in range(-100, 101, 10):
-        xb, xt = skew_x(temp, 0), skew_x(temp, z_max)
+    # 1. Isotherms (Blue) and 2. Thermal Threshold (Orange Dashed 0.5C/100m)
+    for temp_base in range(-120, 121, 10):
+        # Isotherms
+        xb, xt = skew_x(temp_base, 0), skew_x(temp_base, z_max)
         if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
             ax1.plot([xb, xt], [0, z_max], color='blue', alpha=0.08, zorder=1)
-
-    # 2. 0.5C/100m Helper Lines (Orange Dashed) - ADDED EVERY 10C
-    # Calculated as T = T_surface - (5.0 * height_in_km)
-    for t0 in range(-100, 101, 10):
-        t_gradient = t0 - (5.0 * z_ref.m)
-        x_gradient = skew_x(t_gradient, z_ref.m)
-        if np.max(x_gradient) >= (min_x-padding) and np.min(x_gradient) <= (max_x+padding):
-            ax1.plot(x_gradient, z_ref.m, color='orange', linestyle='--', 
+            
+            # Thermal Gradient (0.5C/100m = 5C/km)
+            t_grad = temp_base - (5.0 * z_ref.m)
+            x_grad = skew_x(t_grad, z_ref.m)
+            ax1.plot(x_grad, z_ref.m, color='orange', linestyle='--', 
                      linewidth=1, alpha=0.08, zorder=1)
 
     # 3. Dry Adiabats (Brown)
-    for theta in range(-100, 251, 10):
+    for theta in range(-120, 251, 10):
         t_adiabat = mpcalc.dry_lapse(p_ref, (theta + 273.15) * units.K, 1000 * units.hPa).to(units.degC).m
         x_adiabat = skew_x(t_adiabat, z_ref.m)
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
@@ -102,7 +99,7 @@ def main():
     ax1.plot(skew_t, z_plot, 'red', linewidth=3, zorder=5)
     ax1.plot(skew_td, z_plot, 'green', linewidth=3, zorder=5)
 
-    visible_ticks = [t for t in np.arange(-100, 101, 10) if (min_x-padding) <= t <= (max_x+padding)]
+    visible_ticks = [t for t in np.arange(-120, 121, 10) if (min_x-padding) <= t <= (max_x+padding)]
     ax1.set_xticks(visible_ticks)
     ax1.set_xticklabels(visible_ticks)
     ax1.set_ylabel("Altitude (km)", fontsize=12)
@@ -125,12 +122,12 @@ def main():
     ax2.spines['left'].set_visible(False)
     ax1.spines['right'].set_visible(False)
 
-    # --- ENHANCED TITLE ---
+    # --- REVERTED TITLE FORMAT ---
     ref_dt = datetime.datetime.fromisoformat(ds.attrs["ref_time"])
     output_dt = ref_dt
     lead_hours = int((output_dt - ref_dt).total_seconds() // 3600)
 
-    title_str = (f"Payerne | ICON-CH1 Run: {ref_dt.strftime('%Y-%m-%d %H:%M')} UTC\\n"
+    title_str = (f"Payerne | ICON-CH1 Run: {ref_dt.strftime('%Y-%m-%d %H:%M')} UTC\n"
                  f"Output: {output_dt.strftime('%Y-%m-%d %H:%M')} UTC (+{lead_hours}h)")
     fig.suptitle(title_str, fontsize=14, y=0.96)
 
