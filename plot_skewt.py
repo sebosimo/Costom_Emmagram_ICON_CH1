@@ -68,20 +68,18 @@ def main():
     p_ref = mpcalc.height_to_pressure_std(z_ref)
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
-    # 1. Tilted Isotherms
+    # Reference lines (Isotherms, Adiabats, Mixing Ratio)
     for temp in range(-100, 101, 10):
         xb, xt = skew_x(temp, 0), skew_x(temp, z_max)
         if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
             ax1.plot([xb, xt], [0, z_max], color='blue', alpha=0.08, zorder=1)
 
-    # 2. Dry Adiabats
     for theta in range(-100, 251, 10):
         t_adiabat = mpcalc.dry_lapse(p_ref, (theta + 273.15) * units.K, 1000 * units.hPa).to(units.degC).m
         x_adiabat = skew_x(t_adiabat, z_ref.m)
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
             ax1.plot(x_adiabat, z_ref.m, color='brown', alpha=0.18, linewidth=1.2, zorder=2)
 
-    # 3. Mixing Ratio Lines (RE-ADDED)
     for w in [0.5, 1, 2, 4, 7, 10, 16, 24, 32]:
         e_w = mpcalc.vapor_pressure(p_ref, w * units('g/kg'))
         t_w = mpcalc.dewpoint(e_w).to(units.degC).m
@@ -89,9 +87,10 @@ def main():
         if np.max(x_w) >= (min_x-padding) and np.min(x_w) <= (max_x+padding):
             ax1.plot(x_w, z_ref.m, color='green', alpha=0.15, linestyle=':', zorder=2)
 
-    # --- PLOT THERMO DATA ---
-    ax1.plot(skew_t, z_plot, 'red', linewidth=3, label='Temp', zorder=5)
-    ax1.plot(skew_td, z_plot, 'green', linewidth=3, label='Dewpoint', zorder=5)
+    # --- PLOT THERMO DATA WITH MARKERS ---
+    # Added marker='o' and markersize=3 to visualize individual model levels
+    ax1.plot(skew_t, z_plot, 'red', linewidth=3, label='Temp', zorder=5, marker='o', markersize=3)
+    ax1.plot(skew_td, z_plot, 'green', linewidth=3, label='Dewpoint', zorder=5, marker='o', markersize=3)
 
     visible_ticks = [t for t in np.arange(-100, 101, 10) if (min_x-padding) <= t <= (max_x+padding)]
     ax1.set_xticks(visible_ticks)
@@ -100,19 +99,17 @@ def main():
     ax1.set_xlabel("Temperature (°C)", fontsize=12)
     ax1.legend(loc='upper right', frameon=True)
 
-    # --- PANEL 2: WIND SPEED & BARBS ---
-    ax2.plot(wind_plot, z_plot, color='blue', linewidth=2)
+    # --- PANEL 2: WIND SPEED WITH MARKERS ---
+    # Added marker='o' and markersize=3 to visualize wind data points
+    ax2.plot(wind_plot, z_plot, color='blue', linewidth=2, marker='o', markersize=3)
     ax2.set_xlim(0, 80) 
     ax2.set_xlabel("Wind (km/h)", fontsize=12)
-    
-    # Vertical helper lines at every 10 km/h
     ax2.set_xticks(np.arange(0, 81, 10))
     ax2.grid(True, axis='both', color='gray', alpha=0.2)
     
-    # Hide internal ticks
+    # Hide internal shared ticks
     ax2.yaxis.set_tick_params(which='both', left=False, right=False)
 
-    # Wind Barbs with custom 5/10 km/h increments
     step = max(1, len(z_plot) // 14) 
     ax2.barbs(np.ones_like(z_plot[::step]) * 72, z_plot[::step], 
               u_plot[::step], v_plot[::step], 
@@ -124,7 +121,7 @@ def main():
 
     # 4. Final Polish
     ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
-    fig.suptitle(f"Dynamic Paragliding Sounding | Payerne | {ref_time_str} UTC", fontsize=16, y=0.95)
+    fig.suptitle(f"Dynamic Sounding | ICON-CH1 | {ref_time_str} UTC", fontsize=16, y=0.95)
     plt.savefig("latest_skewt.png", dpi=150, bbox_inches='tight')
 
 if __name__ == "__main__":
