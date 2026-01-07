@@ -68,20 +68,28 @@ def main():
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
     # 1. Isotherms (Blue) and 2. Thermal Threshold (Orange Dashed 0.5C/100m)
-    for temp_base in range(-120, 121, 10):
-        # Isotherms
+    for temp_base in range(-150, 151, 10):
+        # Isotherm coordinates
         xb, xt = skew_x(temp_base, 0), skew_x(temp_base, z_max)
-        if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
+        
+        # Thermal Gradient coordinates (0.5C/100m = 5C/km)
+        t_grad_top = temp_base - (5.0 * z_max)
+        x_grad_top = skew_x(t_grad_top, z_max)
+        x_grad_bottom = skew_x(temp_base, 0)
+
+        # Visibility Check: Draw if either the Isotherm OR the Gradient line is in view
+        if (max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding)) or \
+           (max(x_grad_bottom, x_grad_top) >= (min_x-padding) and min(x_grad_bottom, x_grad_top) <= (max_x+padding)):
+            
+            # Draw Isotherm
             ax1.plot([xb, xt], [0, z_max], color='blue', alpha=0.08, zorder=1)
             
-            # Thermal Gradient (0.5C/100m = 5C/km)
-            t_grad = temp_base - (5.0 * z_ref.m)
-            x_grad = skew_x(t_grad, z_ref.m)
-            ax1.plot(x_grad, z_ref.m, color='orange', linestyle='--', 
-                     linewidth=1, alpha=0.08, zorder=1)
+            # Draw Thermal Gradient
+            ax1.plot([x_grad_bottom, x_grad_top], [0, z_max], color='orange', 
+                     linestyle='--', linewidth=1, alpha=0.08, zorder=1)
 
     # 3. Dry Adiabats (Brown)
-    for theta in range(-120, 251, 10):
+    for theta in range(-150, 301, 10):
         t_adiabat = mpcalc.dry_lapse(p_ref, (theta + 273.15) * units.K, 1000 * units.hPa).to(units.degC).m
         x_adiabat = skew_x(t_adiabat, z_ref.m)
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
@@ -99,7 +107,7 @@ def main():
     ax1.plot(skew_t, z_plot, 'red', linewidth=3, zorder=5)
     ax1.plot(skew_td, z_plot, 'green', linewidth=3, zorder=5)
 
-    visible_ticks = [t for t in np.arange(-120, 121, 10) if (min_x-padding) <= t <= (max_x+padding)]
+    visible_ticks = [t for t in np.arange(-150, 151, 10) if (min_x-padding) <= t <= (max_x+padding)]
     ax1.set_xticks(visible_ticks)
     ax1.set_xticklabels(visible_ticks)
     ax1.set_ylabel("Altitude (km)", fontsize=12)
