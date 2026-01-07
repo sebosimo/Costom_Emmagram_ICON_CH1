@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
-import matplotlib.gridspec as gridspec
 from metpy.plots import SkewT
 from metpy.units import units
 import metpy.calc as mpcalc
@@ -16,36 +15,47 @@ def format_pressure_as_km(x, pos):
 def main():
     files = glob.glob(os.path.join(CACHE_DIR, "*.nc"))
     if not files:
-        print("No cached data! Run fetch_data.py first.")
+        print("Error: No cached data found.")
         return
     
     latest_file = max(files, key=os.path.getctime)
-    print(f"Plotting from cache: {latest_file}")
+    print(f"Generating plot from: {latest_file}")
     ds = xr.open_dataset(latest_file)
     
-    # Process data
+    # 1. Extract values and assign units
     p = ds["P"].values * units.Pa
     t = (ds["T"].values * units.K).to(units.degC)
     u, v = ds["U"].values * units('m/s'), ds["V"].values * units('m/s')
     
+    # 2. Dewpoint Calculation
     if ds.attrs["HUM_TYPE"] == "RELHUM":
         td = mpcalc.dewpoint_from_relative_humidity(t, ds["HUM"].values / 100.0)
     else:
         td = mpcalc.dewpoint_from_specific_humidity(p, t, ds["HUM"].values * units('kg/kg'))
 
-    # Plot
-    fig = plt.figure(figsize=(10, 10))
+    # 3. Plotting
+    fig = plt.figure(figsize=(10, 12))
     skew = SkewT(fig, rotation=45)
-    skew.plot(p, t, 'r', label='Temp')
-    skew.plot(p, td, 'g', label='Dewpoint')
-    skew.plot_barbs(p[::5], u[::5], v[::5])
     
+    p_hpa = p.to(units.hPa)
+    skew.plot(p_hpa, t, 'r', linewidth=2, label='Temperature')
+    skew.plot(p_hpa, td, 'g', linewidth=2, label='Dewpoint')
+    skew.plot_barbs(p_hpa[::5], u[::5], v[::5])
+    
+    # Visual Polish
+    skew.plot_dry_adiabats(alpha=0.1, color='red')
+    skew.plot_moist_adiabats(alpha=0.1, color='blue')
     skew.ax.set_ylim(1050, 100)
+    skew.ax.set_xlim(-40, 40)
     skew.ax.yaxis.set_major_formatter(FuncFormatter(format_pressure_as_km))
+    skew.ax.set_ylabel("Altitude (km) [Std. Atmosphere]")
     
-    plt.title(f"Sounding | {ds.attrs['ref_time']}")
-    plt.savefig("latest_skewt.png")
-    print("latest_skewt.png created.")
+    ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
+    plt.title(f"ICON-CH1 Payerne | {ref_time_str} UTC", fontsize=14)
+    skew.ax.legend(loc='upper left')
+    
+    plt.savefig("latest_skewt.png", bbox_inches='tight', dpi=150)
+    print("Success: latest_skewt.png generated.")
 
 if __name__ == "__main__":
     main()
