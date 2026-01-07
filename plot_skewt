@@ -1,0 +1,58 @@
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
+import matplotlib.gridspec as gridspec
+from metpy.plots import SkewT
+from metpy.units import units
+import metpy.calc as mpcalc
+import xarray as xr
+import os, datetime, glob
+
+CACHE_DIR = "cache_data"
+
+def format_pressure_as_km(x, pos):
+    if x <= 0: return ""
+    return f"{mpcalc.pressure_to_height_std(x * units.hPa).to('km').m:.1f}"
+
+def main():
+    # Find the newest .nc file in the cache directory
+    files = glob.glob(os.path.join(CACHE_DIR, "*.nc"))
+    if not files:
+        print("No data found in cache! Run fetch_data.py first.")
+        return
+    latest_file = max(files, key=os.path.getctime)
+    print(f"Plotting data from: {latest_file}")
+
+    ds = xr.open_dataset(latest_file)
+    ref_time = datetime.datetime.fromisoformat(ds.attrs["ref_time"])
+    
+    # Extract values and apply units
+    p = ds["P"].values * units.Pa
+    t = (ds["T"].values * units.K).to(units.degC)
+    u, v = ds["U"].values * units('m/s'), ds["V"].values * units('m/s')
+    
+    if ds.attrs["HUM_TYPE"] == "RELHUM":
+        td = mpcalc.dewpoint_from_relative_humidity(t, ds["HUM"].values / 100.0)
+    else:
+        td = mpcalc.dewpoint_from_specific_humidity(p, t, ds["HUM"].values * units('kg/kg'))
+
+    # Sort descending
+    inds = p.argsort()[::-1]
+    p_hpa = p[inds].to(units.hPa)
+    t, td, u, v = t[inds], td[inds], u[inds], v[inds]
+    
+    # --- PLOTTING LOGIC --- (Change your colors/styles here!)
+    fig = plt.figure(figsize=(12, 10))
+    skew = SkewT(fig, rotation=45)
+    skew.plot(p_hpa, t, 'r', linewidth=2, label='Temp')
+    skew.plot(p_hpa, td, 'g', linewidth=2, label='Dewpoint')
+    skew.plot_barbs(p_hpa[::5], u[::5], v[::5])
+    
+    skew.ax.set_ylim(1050, 100)
+    skew.ax.yaxis.set_major_formatter(FuncFormatter(format_pressure_as_km))
+    plt.title(f"Payerne Sounding | {ref_time.strftime('%Y-%m-%d %H:%M')} UTC")
+    
+    plt.savefig("latest_skewt.png", bbox_inches='tight')
+    print("Plot saved to latest_skewt.png")
+
+if __name__ == "__main__":
+    main()
