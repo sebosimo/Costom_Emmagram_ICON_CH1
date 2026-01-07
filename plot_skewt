@@ -5,53 +5,57 @@ import metpy.calc as mpcalc
 import xarray as xr
 import os, datetime, glob
 
+# Configuration
 CACHE_DIR = "cache_data"
 
 def main():
-    # Find the newest file in cache
+    # 1. Find the newest data file
     files = glob.glob(os.path.join(CACHE_DIR, "*.nc"))
     if not files:
-        print("No data in cache. Run fetch_data.py first.")
+        print("Error: No cached data found. Run fetch_data.py first.")
         return
-    latest_file = max(files, key=os.path.getctime)
-    print(f"Plotting from: {latest_file}")
     
+    latest_file = max(files, key=os.path.getctime)
+    print(f"Generating plot from: {latest_file}")
+    
+    # 2. Load and extract data
     ds = xr.open_dataset(latest_file)
     ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
 
-    # Unit Conversion & Sorting (Your original logic)
     p = ds["P"].values * units.Pa
-    t = ds["T"].values * units.K
-    u = ds["U"].values * units('m/s')
-    v = ds["V"].values * units('m/s')
+    t = (ds["T"].values * units.K)
+    u, v = ds["U"].values * units('m/s'), ds["V"].values * units('m/s')
     
+    # Dewpoint calculation based on humidity type
     if ds.attrs["HUM_TYPE"] == "RELHUM":
         td = mpcalc.dewpoint_from_relative_humidity(t, ds["HUM"].values / 100.0)
     else:
         td = mpcalc.dewpoint_from_specific_humidity(p, t, ds["HUM"].values * units('kg/kg'))
 
+    # Sort descending for Skew-T (Surface -> Space)
     inds = p.argsort()[::-1]
-    p, t, td, u, v = p[inds], t[inds], td[inds], u[inds], v[inds]
+    p_hpa, t_degc, td_degc = p[inds].to(units.hPa), t[inds].to(units.degC), td[inds].to(units.degC)
+    u, v = u[inds], v[inds]
 
-    # Plotting Setup
+    # 3. Plotting Logic
     fig = plt.figure(figsize=(10, 12))
     skew = SkewT(fig, rotation=45)
     
-    skew.plot(p.to(units.hPa), t.to(units.degC), 'r', linewidth=2.5, label='Temperature')
-    skew.plot(p.to(units.hPa), td.to(units.degC), 'g', linewidth=2.5, label='Dewpoint')
-    skew.plot_barbs(p.to(units.hPa)[::3], u[::3], v[::3])
+    skew.plot(p_hpa, t_degc, 'r', linewidth=2.5, label='Temperature')
+    skew.plot(p_hpa, td_degc, 'g', linewidth=2.5, label='Dewpoint')
+    skew.plot_barbs(p_hpa[::3], u[::3], v[::3])
     
     skew.plot_dry_adiabats(alpha=0.1, color='red')
     skew.plot_moist_adiabats(alpha=0.1, color='blue')
-    skew.plot_mixing_lines(alpha=0.1, color='green')
     
     skew.ax.set_ylim(1050, 100)
     skew.ax.set_xlim(-40, 40)
     plt.title(f"ICON-CH1 Sounding (Payerne) | {ref_time_str} UTC", fontsize=14)
     skew.ax.legend(loc='upper left')
     
+    # 4. Save
     plt.savefig("latest_skewt.png", bbox_inches='tight', dpi=150)
-    print("latest_skewt.png saved successfully.")
+    print("Success: latest_skewt.png generated.")
 
 if __name__ == "__main__":
     main()
