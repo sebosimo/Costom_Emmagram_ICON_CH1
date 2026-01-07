@@ -11,21 +11,21 @@ CACHE_DIR = "cache_data"
 
 def format_pressure_as_km(x, pos):
     if x <= 0: return ""
-    return f"{mpcalc.pressure_to_height_std(x * units.hPa).to('km').m:.1f}"
+    height = mpcalc.pressure_to_height_std(x * units.hPa).to('km')
+    return f"{height.m:.1f}"
 
 def main():
-    # Find the newest .nc file in the cache directory
     files = glob.glob(os.path.join(CACHE_DIR, "*.nc"))
     if not files:
-        print("No data found in cache! Run fetch_data.py first.")
+        print("No cached data found! Run fetch_data.py first.")
         return
+    
     latest_file = max(files, key=os.path.getctime)
-    print(f"Plotting data from: {latest_file}")
+    print(f"Plotting from: {latest_file}")
 
     ds = xr.open_dataset(latest_file)
     ref_time = datetime.datetime.fromisoformat(ds.attrs["ref_time"])
     
-    # Extract values and apply units
     p = ds["P"].values * units.Pa
     t = (ds["T"].values * units.K).to(units.degC)
     u, v = ds["U"].values * units('m/s'), ds["V"].values * units('m/s')
@@ -35,24 +35,32 @@ def main():
     else:
         td = mpcalc.dewpoint_from_specific_humidity(p, t, ds["HUM"].values * units('kg/kg'))
 
-    # Sort descending
+    # Sort Surface to Space
     inds = p.argsort()[::-1]
-    p_hpa = p[inds].to(units.hPa)
-    t, td, u, v = t[inds], td[inds], u[inds], v[inds]
+    p_hpa, t, td, u, v = p[inds].to(units.hPa), t[inds], td[inds], u[inds], v[inds]
     
-    # --- PLOTTING LOGIC --- (Change your colors/styles here!)
-    fig = plt.figure(figsize=(12, 10))
-    skew = SkewT(fig, rotation=45)
-    skew.plot(p_hpa, t, 'r', linewidth=2, label='Temp')
-    skew.plot(p_hpa, td, 'g', linewidth=2, label='Dewpoint')
+    # Visualization setup
+    fig = plt.figure(figsize=(12, 12))
+    gs = gridspec.GridSpec(1, 2, width_ratios=[4, 1], wspace=0.05)
+    skew = SkewT(fig, rotation=45, subplot=gs[0])
+
+    # Plot lines
+    skew.plot(p_hpa, t, 'red', linewidth=2, label='Temp')
+    skew.plot(p_hpa, td, 'green', linewidth=2, label='Dewpoint')
     skew.plot_barbs(p_hpa[::5], u[::5], v[::5])
     
-    skew.ax.set_ylim(1050, 100)
-    skew.ax.yaxis.set_major_formatter(FuncFormatter(format_pressure_as_km))
-    plt.title(f"Payerne Sounding | {ref_time.strftime('%Y-%m-%d %H:%M')} UTC")
+    # Background lines
+    skew.plot_dry_adiabats(alpha=0.1)
+    skew.plot_moist_adiabats(alpha=0.1)
+    skew.plot_mixing_lines(alpha=0.1)
     
-    plt.savefig("latest_skewt.png", bbox_inches='tight')
-    print("Plot saved to latest_skewt.png")
+    skew.ax.set_ylim(1050, 100)
+    skew.ax.set_ylabel("Altitude (km)")
+    skew.ax.yaxis.set_major_formatter(FuncFormatter(format_pressure_as_km))
+    
+    plt.suptitle(f"ICON-CH1 Sounding (Payerne) | {ref_time.strftime('%Y-%m-%d %H:%M')} UTC", y=0.95)
+    plt.savefig("latest_skewt.png", bbox_inches='tight', dpi=150)
+    print("Success: latest_skewt.png generated.")
 
 if __name__ == "__main__":
     main()
