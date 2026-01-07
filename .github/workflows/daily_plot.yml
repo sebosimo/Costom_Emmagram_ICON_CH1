@@ -18,9 +18,10 @@ jobs:
   run-plot:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      # 1. Cache the Weather Data (.nc files)
+      # 1. Cache Weather Data (.nc files)
       - name: Cache Weather Data
         uses: actions/cache@v3
         with:
@@ -29,22 +30,31 @@ jobs:
           restore-keys: |
             weather-data-
 
-      # 2. Setup Python with built-in caching for pip
+      # 2. Setup Python with advanced Pip caching
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip' # This speeds up dependency installs automatically
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
 
-      # 3. Install System Dependencies (LibecCodes is hard to cache, keep as is)
+      # 3. Optimized System Dependencies
+      # We check for eccodes first to avoid unnecessary 'apt update' time
       - name: Install System Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y libeccodes-dev
+          if ! command -v bufr_dump &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y libeccodes-dev
+          else
+            print("libeccodes already installed, skipping...")
+          fi
 
-      # 4. Install Python Dependencies (Will use cache from step 2 if possible)
+      # 4. Install Python Dependencies from requirements.txt
+      # This step will finish in ~5 seconds if the cache hits
       - name: Install Python Dependencies
         run: |
-          pip install metpy xarray cfgrib meteodata-lab pandas matplotlib netCDF4
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       # 5. Fetch Data (Only runs if plot_only is False)
       - name: Fetch Data
@@ -53,10 +63,11 @@ jobs:
           FORCE_REFRESH: ${{ github.event.inputs.force_refresh }}
         run: python fetch_data.py
 
-      # 6. Generate Plot (Always runs)
+      # 6. Generate Plot
       - name: Generate Plot
         run: python plot_skewt.py
 
+      # 7. Upload the PNG
       - name: Upload Plot
         uses: actions/upload-artifact@v4
         with:
