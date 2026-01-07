@@ -20,7 +20,6 @@ def main():
     # 2. Extract values and assign units
     p = ds["P"].values * units.Pa
     t = (ds["T"].values * units.K).to(units.degC)
-    # Start with standard m/s components
     u_ms, v_ms = ds["U"].values * units('m/s'), ds["V"].values * units('m/s')
     
     if ds.attrs.get("HUM_TYPE") == "RELHUM":
@@ -28,10 +27,9 @@ def main():
     else:
         td = mpcalc.dewpoint_from_specific_humidity(p, t, ds["HUM"].values * units('kg/kg'))
 
-    # Calculate Altitude and Wind Speed in km/h
     z = mpcalc.pressure_to_height_std(p).to(units.km)
     
-    # Scientifically sound conversion using MetPy's unit system (factor of 3.6)
+    # Scientific conversion to km/h
     u_kmh = u_ms.to('km/h').m
     v_kmh = v_ms.to('km/h').m
     wind_speed_kmh = mpcalc.wind_speed(u_ms, v_ms).to('km/h').m
@@ -47,12 +45,12 @@ def main():
     u_plot, v_plot = u_plot[mask], v_plot[mask]
 
     # --- SKEW CONFIGURATION ---
-    SKEW_FACTOR = 5 
+    SKEW_FACTOR = 5  # Updated to 5
     def skew_x(temp, height):
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
-    # Width 18, with 6:1 ratio to provide more room for the wind plot
+    # Width updated to 18; ratio kept at 6:1 for wind room
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
                                    gridspec_kw={'width_ratios': [6, 1], 'wspace': 0})
     
@@ -73,14 +71,14 @@ def main():
     # Tilted Isotherms
     for temp in range(-100, 101, 10):
         xb, xt = skew_x(temp, 0), skew_x(temp, z_max)
-        if max(xb, xt) >= (min_x-5) and min(xb, xt) <= (max_x+5):
+        if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
             ax1.plot([xb, xt], [0, z_max], color='blue', alpha=0.08, zorder=1)
 
     # Dry Adiabats
     for theta in range(-100, 251, 10):
         t_adiabat = mpcalc.dry_lapse(p_ref, (theta + 273.15) * units.K, 1000 * units.hPa).to(units.degC).m
         x_adiabat = skew_x(t_adiabat, z_ref.m)
-        if np.max(x_adiabat) >= (min_x-5) and np.min(x_adiabat) <= (max_x+5):
+        if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
             ax1.plot(x_adiabat, z_ref.m, color='brown', alpha=0.18, linewidth=1.2, zorder=2)
 
     # Mixing Ratio Lines
@@ -88,7 +86,7 @@ def main():
         e_w = mpcalc.vapor_pressure(p_ref, w * units('g/kg'))
         t_w = mpcalc.dewpoint(e_w).to(units.degC).m
         x_w = skew_x(t_w, z_ref.m)
-        if np.max(x_w) >= (min_x-5) and np.min(x_w) <= (max_x+5):
+        if np.max(x_w) >= (min_x-padding) and np.min(x_w) <= (max_x+padding):
             ax1.plot(x_w, z_ref.m, color='green', alpha=0.15, linestyle=':', zorder=2)
 
     # --- PLOT THERMO DATA ---
@@ -96,7 +94,7 @@ def main():
     ax1.plot(skew_td, z_plot, 'green', linewidth=3, label='Dewpoint', zorder=5)
 
     temp_ticks = np.arange(-100, 101, 10)
-    visible_ticks = [t for t in temp_ticks if (min_x-5) <= t <= (max_x+5)]
+    visible_ticks = [t for t in temp_ticks if (min_x-padding) <= t <= (max_x+padding)]
     ax1.set_xticks(visible_ticks)
     ax1.set_xticklabels(visible_ticks)
     ax1.set_ylabel("Altitude (km)", fontsize=12)
@@ -109,7 +107,9 @@ def main():
     ax2.set_xlabel("Wind (km/h)", fontsize=12)
     ax2.grid(True, axis='both', alpha=0.2)
     
-    # Scientifically define the barb thresholds in km/h units
+    # REMOVE INTERNAL TICKS
+    ax2.yaxis.set_tick_params(which='both', left=False, right=False)
+
     step = max(1, len(z_plot) // 14) 
     ax2.barbs(np.ones_like(z_plot[::step]) * 45, z_plot[::step], 
               u_plot[::step], v_plot[::step], 
@@ -119,8 +119,9 @@ def main():
     ax2.spines['left'].set_visible(False)
     ax1.spines['right'].set_visible(False)
 
+    # 4. Final Polish
     ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
-    fig.suptitle(f"Paragliding Sounding | Payerne | {ref_time_str} UTC", fontsize=16, y=0.95)
+    fig.suptitle(f"Dynamic Paragliding Sounding | Payerne | {ref_time_str} UTC", fontsize=16, y=0.95)
     plt.savefig("latest_skewt.png", dpi=150, bbox_inches='tight')
 
 if __name__ == "__main__":
