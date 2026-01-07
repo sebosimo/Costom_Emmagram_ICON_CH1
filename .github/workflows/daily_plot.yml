@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       force_refresh:
-        description: 'Download fresh data (True) or use cache (False)?'
+        description: 'Download fresh data?'
         type: boolean
         default: false
       plot_only:
-        description: 'Skip fetch step entirely and only re-plot?'
+        description: 'Skip fetch step?'
         type: boolean
         default: false
   schedule:
@@ -21,40 +21,34 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      # 1. Restore Weather Data from cache
+      # 1. Faster Weather Data Cache
       - name: Cache Weather Data
-        uses: actions/cache@v3
+        uses: actions/cache@v4 # Upgraded to v4
         with:
           path: cache_data
-          key: weather-data-${{ github.run_id }}
-          restore-keys: |
-            weather-data-
+          key: weather-v1-${{ github.run_id }}
+          restore-keys: weather-v1-
 
-      # 2. Setup Python with requirements.txt tracking
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      # 2. Ultra-fast Python Setup with uv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: 'requirements.txt'
+          enable-cache: true
+          cache-dependency-path: "requirements.txt"
 
-      # 3. Corrected System Dependencies
+      # 3. Lean System Dependencies
+      # We skip 'apt update' to save ~15 seconds. 
+      # If it ever fails, it will just fall back to a slower run next time.
       - name: Install System Dependencies
         run: |
-          if ! command -v bufr_dump &> /dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y libeccodes-dev
-          else
-            echo "libeccodes already installed, skipping..."
-          fi
+          sudo apt-get install -y libeccodes-dev || (sudo apt-get update && sudo apt-get install -y libeccodes-dev)
 
-      # 4. Fast install of Python packages
+      # 4. Lightning Fast Python Install
+      # uv installs from cache in < 2 seconds
       - name: Install Python Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: uv pip install -r requirements.txt --system
 
-      # 5. Fetch Step (Toggleable)
+      # 5. Fetch Step
       - name: Fetch Data
         if: github.event.inputs.plot_only != 'true'
         env:
@@ -65,7 +59,6 @@ jobs:
       - name: Generate Plot
         run: python plot_skewt.py
 
-      # 7. Final Artifact Upload
       - name: Upload Plot
         uses: actions/upload-artifact@v4
         with:
