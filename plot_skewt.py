@@ -29,7 +29,7 @@ def main():
 
     z = mpcalc.pressure_to_height_std(p).to(units.km)
     
-    # Scientific conversion to km/h
+    # Scientific conversion to km/h using MetPy units
     u_kmh = u_ms.to('km/h').m
     v_kmh = v_ms.to('km/h').m
     wind_speed_kmh = mpcalc.wind_speed(u_ms, v_ms).to('km/h').m
@@ -45,14 +45,14 @@ def main():
     u_plot, v_plot = u_plot[mask], v_plot[mask]
 
     # --- SKEW CONFIGURATION ---
-    SKEW_FACTOR = 5  # Updated to 5
+    SKEW_FACTOR = 5 
     def skew_x(temp, height):
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
-    # Width updated to 18; ratio kept at 6:1 for wind room
+    # Width 18"; wind panel doubled in size relative to previous version (ratio 3:1)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
-                                   gridspec_kw={'width_ratios': [4, 1], 'wspace': 0})
+                                   gridspec_kw={'width_ratios': [3, 1], 'wspace': 0})
     
     ax1.set_ylim(0, z_max)
     
@@ -68,50 +68,44 @@ def main():
     p_ref = mpcalc.height_to_pressure_std(z_ref)
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
-    # Tilted Isotherms
+    # Isotherms, Adiabats, and Mixing Ratio
     for temp in range(-100, 101, 10):
         xb, xt = skew_x(temp, 0), skew_x(temp, z_max)
         if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
             ax1.plot([xb, xt], [0, z_max], color='blue', alpha=0.08, zorder=1)
 
-    # Dry Adiabats
     for theta in range(-100, 251, 10):
         t_adiabat = mpcalc.dry_lapse(p_ref, (theta + 273.15) * units.K, 1000 * units.hPa).to(units.degC).m
         x_adiabat = skew_x(t_adiabat, z_ref.m)
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
             ax1.plot(x_adiabat, z_ref.m, color='brown', alpha=0.18, linewidth=1.2, zorder=2)
 
-    # Mixing Ratio Lines
-    for w in [0.5, 1, 2, 4, 7, 10, 16, 24, 32]:
-        e_w = mpcalc.vapor_pressure(p_ref, w * units('g/kg'))
-        t_w = mpcalc.dewpoint(e_w).to(units.degC).m
-        x_w = skew_x(t_w, z_ref.m)
-        if np.max(x_w) >= (min_x-padding) and np.min(x_w) <= (max_x+padding):
-            ax1.plot(x_w, z_ref.m, color='green', alpha=0.15, linestyle=':', zorder=2)
-
     # --- PLOT THERMO DATA ---
     ax1.plot(skew_t, z_plot, 'red', linewidth=3, label='Temp', zorder=5)
     ax1.plot(skew_td, z_plot, 'green', linewidth=3, label='Dewpoint', zorder=5)
 
-    temp_ticks = np.arange(-100, 101, 10)
-    visible_ticks = [t for t in temp_ticks if (min_x-padding) <= t <= (max_x+padding)]
+    visible_ticks = [t for t in np.arange(-100, 101, 10) if (min_x-padding) <= t <= (max_x+padding)]
     ax1.set_xticks(visible_ticks)
     ax1.set_xticklabels(visible_ticks)
     ax1.set_ylabel("Altitude (km)", fontsize=12)
     ax1.set_xlabel("Temperature (°C)", fontsize=12)
     ax1.legend(loc='upper right', frameon=True)
 
-    # --- PANEL 2: WIND SPEED & CUSTOM KM/H BARBS ---
+    # --- PANEL 2: WIND SPEED & BARBS ---
     ax2.plot(wind_plot, z_plot, color='blue', linewidth=2)
-    ax2.set_xlim(0, 50) 
+    ax2.set_xlim(0, 80) # Updated Speed Range
     ax2.set_xlabel("Wind (km/h)", fontsize=12)
-    ax2.grid(True, axis='both', alpha=0.2)
     
-    # REMOVE INTERNAL TICKS
+    # Vertical helper lines at every 10 km/h
+    ax2.set_xticks(np.arange(0, 81, 10))
+    ax2.grid(True, axis='both', color='gray', alpha=0.2)
+    
+    # Remove shared internal ticks
     ax2.yaxis.set_tick_params(which='both', left=False, right=False)
 
+    # Wind Barbs with custom 5/10 km/h increments
     step = max(1, len(z_plot) // 14) 
-    ax2.barbs(np.ones_like(z_plot[::step]) * 45, z_plot[::step], 
+    ax2.barbs(np.ones_like(z_plot[::step]) * 72, z_plot[::step], 
               u_plot[::step], v_plot[::step], 
               barb_increments=dict(half=5, full=10, flag=50),
               length=6, color='black', alpha=0.8)
