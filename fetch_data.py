@@ -9,7 +9,7 @@ CACHE_DIR = "cache_data"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 def clean_for_netcdf(ds):
-    """Removes non-serializable earthkit metadata objects."""
+    """Removes complex metadata objects that break NetCDF saving."""
     ds.attrs = {k: v for k, v in ds.attrs.items() if isinstance(v, (str, int, float, list, tuple))}
     for var in list(ds.data_vars) + list(ds.coords):
         ds[var].attrs = {}
@@ -27,7 +27,9 @@ def get_nearest_profile(ds, lat, lon):
     return profile.squeeze().compute()
 
 def main():
+    # Check if we should ignore cache
     force = os.getenv("FORCE_REFRESH") == "true"
+    
     now = datetime.datetime.now(datetime.timezone.utc)
     base_hour = (now.hour // 3) * 3
     latest_run = now.replace(hour=base_hour, minute=0, second=0, microsecond=0)
@@ -38,32 +40,49 @@ def main():
         cache_path = os.path.join(CACHE_DIR, f"profile_{time_tag}.nc")
 
         if os.path.exists(cache_path) and not force:
-            print(f">>> {time_tag} already cached. Skipping download.")
-            return # Exit early, we have what we need
+            print(f">>> {time_tag} already cached. Skipping.")
+            return
 
-        print(f"--- Downloading Run: {ref_time.strftime('%H:%M')} UTC ---")
+        print(f"--- Attempting Download: {ref_time.strftime('%H:%M')} UTC ---")
         try:
             profile_data = {}
             for var in CORE_VARS:
-                req = ogd_api.Request(collection="ogd-forecasting-icon-ch1", variable=var, reference_datetime=ref_time, horizon="P0DT0H")
+                # FIX: Added perturbed=False
+                req = ogd_api.Request(
+                    collection="ogd-forecasting-icon-ch1", 
+                    variable=var, 
+                    reference_datetime=ref_time, 
+                    horizon="P0DT0H",
+                    perturbed=False
+                )
                 profile_data[var] = get_nearest_profile(ogd_api.get_from_ogd(req), LAT_TARGET, LON_TARGET)
             
             for hum in ["RELHUM", "QV"]:
-                req_h = ogd_api.Request(collection="ogd-forecasting-icon-ch1", variable=hum, reference_datetime=ref_time, horizon="P0DT0H")
+                # FIX: Added perturbed=False
+                req_h = ogd_api.Request(
+                    collection="ogd-forecasting-icon-ch1", 
+                    variable=hum, 
+                    reference_datetime=ref_time, 
+                    horizon="P0DT0H",
+                    perturbed=False
+                )
                 res_h = get_nearest_profile(ogd_api.get_from_ogd(req_h), LAT_TARGET, LON_TARGET)
                 if res_h is not None:
                     profile_data["HUM"], profile_data["HUM_TYPE"] = res_h, hum
                     break
             
-            ds = clean_for_netcdf(xr.Dataset({v: profile_data[v] for v in CORE_VARS + ["HUM"]}))
+            # Create dataset and save
+            ds = xr.Dataset({v: profile_data[v] for v in CORE_VARS + ["HUM"]})
+            ds = clean_for_netcdf(ds)
             ds.attrs["HUM_TYPE"] = profile_data["HUM_TYPE"]
             ds.attrs["ref_time"] = ref_time.isoformat()
             ds.to_netcdf(cache_path)
-            print(f">>> SUCCESS: Saved {cache_path}")
-            return
+            print(f">>> SUCCESS: Saved to {cache_path}")
+            return 
         except Exception as e:
             print(f"Run {ref_time.strftime('%H:%M')} failed: {e}")
 
+    print("Error: Could not find any valid model runs.")
     sys.exit(1)
 
 if __name__ == "__main__":
