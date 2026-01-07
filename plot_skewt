@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FuncFormatter
 from metpy.plots import SkewT
 from metpy.units import units
 import metpy.calc as mpcalc
@@ -8,52 +7,51 @@ import os, datetime, glob
 
 CACHE_DIR = "cache_data"
 
-def format_pressure_as_km(x, pos):
-    if x <= 0: return ""
-    return f"{mpcalc.pressure_to_height_std(x * units.hPa).to('km').m:.1f}"
-
 def main():
+    # Find the newest file in cache
     files = glob.glob(os.path.join(CACHE_DIR, "*.nc"))
     if not files:
-        print("No cache data. Run fetch_data.py first.")
+        print("No data in cache. Run fetch_data.py first.")
         return
-    
     latest_file = max(files, key=os.path.getctime)
     print(f"Plotting from: {latest_file}")
+    
     ds = xr.open_dataset(latest_file)
-    
-    # Unit Assignments
+    ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
+
+    # Unit Conversion & Sorting (Your original logic)
     p = ds["P"].values * units.Pa
-    t = (ds["T"].values * units.K).to(units.degC)
-    u, v = ds["U"].values * units('m/s'), ds["V"].values * units('m/s')
+    t = ds["T"].values * units.K
+    u = ds["U"].values * units('m/s')
+    v = ds["V"].values * units('m/s')
     
-    # Dewpoint Logic
     if ds.attrs["HUM_TYPE"] == "RELHUM":
         td = mpcalc.dewpoint_from_relative_humidity(t, ds["HUM"].values / 100.0)
     else:
         td = mpcalc.dewpoint_from_specific_humidity(p, t, ds["HUM"].values * units('kg/kg'))
 
-    # Sort descending
     inds = p.argsort()[::-1]
-    p_hpa, t, td, u, v = p[inds].to(units.hPa), t[inds], td[inds], u[inds], v[inds]
+    p, t, td, u, v = p[inds], t[inds], td[inds], u[inds], v[inds]
 
-    # Visualization
+    # Plotting Setup
     fig = plt.figure(figsize=(10, 12))
     skew = SkewT(fig, rotation=45)
-    skew.plot(p_hpa, t, 'r', linewidth=2, label='Temperature')
-    skew.plot(p_hpa, td, 'g', linewidth=2, label='Dewpoint')
-    skew.plot_barbs(p_hpa[::5], u[::5], v[::5])
+    
+    skew.plot(p.to(units.hPa), t.to(units.degC), 'r', linewidth=2.5, label='Temperature')
+    skew.plot(p.to(units.hPa), td.to(units.degC), 'g', linewidth=2.5, label='Dewpoint')
+    skew.plot_barbs(p.to(units.hPa)[::3], u[::3], v[::3])
+    
+    skew.plot_dry_adiabats(alpha=0.1, color='red')
+    skew.plot_moist_adiabats(alpha=0.1, color='blue')
+    skew.plot_mixing_lines(alpha=0.1, color='green')
     
     skew.ax.set_ylim(1050, 100)
-    skew.ax.yaxis.set_major_formatter(FuncFormatter(format_pressure_as_km))
-    skew.ax.set_ylabel("Altitude (km) [Std. Atmosphere]")
+    skew.ax.set_xlim(-40, 40)
+    plt.title(f"ICON-CH1 Sounding (Payerne) | {ref_time_str} UTC", fontsize=14)
+    skew.ax.legend(loc='upper left')
     
-    time_utc = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
-    plt.title(f"ICON-CH1 Payerne | {time_utc} UTC")
-    plt.legend(loc='upper left')
-    
-    plt.savefig("latest_skewt.png", bbox_inches='tight')
-    print("Success: latest_skewt.png saved.")
+    plt.savefig("latest_skewt.png", bbox_inches='tight', dpi=150)
+    print("latest_skewt.png saved successfully.")
 
 if __name__ == "__main__":
     main()
