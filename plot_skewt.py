@@ -67,11 +67,18 @@ def main():
     p_ref = mpcalc.height_to_pressure_std(z_ref)
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
-    # Standard Isotherms and Dry Adiabats
+    # Isotherms, Dry Adiabats, and Mixing Ratio Lines
     for temp in range(-100, 101, 10):
         xb, xt = skew_x(temp, 0), skew_x(temp, z_max)
         if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
+            # 1. Tilted Isotherms
             ax1.plot([xb, xt], [0, z_max], color='blue', alpha=0.08, zorder=1)
+            
+            # 2. Thermal Threshold Lines (0.5C / 100m = 5C / 1km)
+            # Re-added every 10C with same alpha (0.08) as isotherms
+            t_thresh = temp - (5.0 * z_ref.m)
+            ax1.plot(skew_x(t_thresh, z_ref.m), z_ref.m, color='orange', 
+                     linestyle='--', linewidth=1, alpha=0.08, zorder=1)
 
     for theta in range(-100, 251, 10):
         t_adiabat = mpcalc.dry_lapse(p_ref, (theta + 273.15) * units.K, 1000 * units.hPa).to(units.degC).m
@@ -79,20 +86,12 @@ def main():
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
             ax1.plot(x_adiabat, z_ref.m, color='brown', alpha=0.18, linewidth=1.2, zorder=2)
 
-    # Mixing Ratio Lines
     for w in [0.5, 1, 2, 4, 7, 10, 16, 24, 32]:
         e_w = mpcalc.vapor_pressure(p_ref, w * units('g/kg'))
         t_w = mpcalc.dewpoint(e_w).to(units.degC).m
         x_w = skew_x(t_w, z_ref.m)
         if np.max(x_w) >= (min_x-padding) and np.min(x_w) <= (max_x+padding):
             ax1.plot(x_w, z_ref.m, color='green', alpha=0.15, linestyle=':', zorder=2)
-
-    # --- THERMAL THRESHOLD LINE (0.5C / 100m) ---
-    # We plot this relative to the surface temperature to show the 'critical' slope
-    t0 = t_plot[0]
-    t_threshold = t0 - (5.0 * z_ref.m) # 5C per km = 0.5C per 100m
-    ax1.plot(skew_x(t_threshold, z_ref.m), z_ref.m, color='orange', 
-             linestyle='--', linewidth=1.5, alpha=0.6, label='Thermal Threshold (0.5°/100m)')
 
     # --- PLOT THERMO DATA ---
     ax1.plot(skew_t, z_plot, 'red', linewidth=3, label='Temp', zorder=5)
@@ -123,11 +122,8 @@ def main():
     ax1.spines['right'].set_visible(False)
 
     # --- ENHANCED TITLE ---
-    # Model Run (Reference Time)
     ref_dt = datetime.datetime.fromisoformat(ds.attrs["ref_time"])
-    # Forecast Time (Assuming Horizon P0DT0H as per fetch_data.py)
-    # If the horizon changes, this would be ref_dt + delta
-    output_dt = ref_dt 
+    output_dt = ref_dt # Horizon P0DT0H
     lead_hours = int((output_dt - ref_dt).total_seconds() // 3600)
 
     title_str = (f"Payerne | ICON-CH1 Run: {ref_dt.strftime('%Y-%m-%d %H:%M')} UTC\n"
