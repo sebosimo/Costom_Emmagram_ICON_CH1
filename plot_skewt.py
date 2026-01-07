@@ -41,7 +41,7 @@ def main():
     p_plot = p[inds][mask]
 
     # --- SKEW CONFIGURATION ---
-    SKEW_FACTOR = 8 
+    SKEW_FACTOR = 12 
     def skew_x(temp, height):
         return temp + (height * SKEW_FACTOR)
 
