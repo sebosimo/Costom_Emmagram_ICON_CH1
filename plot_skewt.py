@@ -27,11 +27,9 @@ def main():
     else:
         td = mpcalc.dewpoint_from_specific_humidity(p, t, ds["HUM"].values * units('kg/kg'))
 
-    # Calculate Standard Altitude (km) and Speed (km/h)
     z = mpcalc.pressure_to_height_std(p).to(units.km)
     wind_speed = mpcalc.wind_speed(u, v).to('km/h')
 
-    # Sort and filter for 0-7 km range
     inds = z.argsort()
     z_plot, t_plot, td_plot, wind_plot = z[inds].m, t[inds].m, td[inds].m, wind_speed[inds].m
     u_plot, v_plot = u[inds].m, v[inds].m 
@@ -47,38 +45,35 @@ def main():
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
-    # Width 22 and ratio 8:1 maximizes the pixels-per-degree Celsius
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(22, 10), sharey=True, 
-                                   gridspec_kw={'width_ratios': [8, 1], 'wspace': 0})
+    # Width 28 and ratio 10:1 creates extreme horizontal temperature spacing
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(28, 10), sharey=True, 
+                                   gridspec_kw={'width_ratios': [10, 1], 'wspace': 0})
     
     ax1.set_ylim(0, z_max)
     
-    # REMOVE EMPTY SPACE: Right limit is set to 45 (just past 40C at surface)
-    # Left limit is dynamic to the minimum dewpoint to prune unused left space
-    left_bound = skew_x(np.min(td_plot) - 5, 0)
-    right_bound = 45 
+    # BOUNDS: Remove below -20 at surface. 
+    # Right bound is dynamic to fit the sounding and the 40C mark tightly.
+    left_bound = skew_x(-20, 0)
+    right_bound = max(skew_x(40, 0), np.max(skew_x(t_plot, z_plot))) + 2
     ax1.set_xlim(left_bound, right_bound)
 
     # --- DRAW HELPER LINES ---
     z_ref = np.linspace(0, z_max, 100) * units.km
     p_ref = mpcalc.height_to_pressure_std(z_ref)
 
-    # Horizontal Altitude Lines
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
-    # Tilted Isotherms (Every 10°C)
+    # Reference lines (Isotherms, Adiabats, Mixing Ratio)
     for temp in range(-100, 101, 10):
         ax1.plot([skew_x(temp, 0), skew_x(temp, z_max)], [0, z_max], 
                  color='blue', alpha=0.08, linestyle='-', zorder=1)
 
-    # Dry Adiabats (Potential Temperature)
-    for theta in range(-60, 201, 10):
+    for theta in range(-80, 221, 10):
         theta_val = (theta + 273.15) * units.K
         t_adiabat = mpcalc.dry_lapse(p_ref, theta_val, 1000 * units.hPa).to(units.degC).m
         ax1.plot(skew_x(t_adiabat, z_ref.m), z_ref.m, color='brown', alpha=0.18, linewidth=1.2, zorder=2)
 
-    # Mixing Ratio Lines
-    for w in [1, 2, 4, 7, 10, 16, 24, 32]:
+    for w in [0.5, 1, 2, 4, 7, 10, 16, 24, 32]:
         e_w = mpcalc.vapor_pressure(p_ref, w * units('g/kg'))
         t_w = mpcalc.dewpoint(e_w).to(units.degC).m
         ax1.plot(skew_x(t_w, z_ref.m), z_ref.m, color='green', alpha=0.15, linestyle=':', zorder=2)
@@ -87,11 +82,10 @@ def main():
     ax1.plot(skew_x(t_plot, z_plot), z_plot, 'red', linewidth=3, label='Temp', zorder=5)
     ax1.plot(skew_x(td_plot, z_plot), z_plot, 'green', linewidth=3, label='Dewpoint', zorder=5)
 
-    # Label only the relevant temperature range at the surface
-    temp_ticks = np.arange(-60, 51, 10)
-    valid_ticks = [t for t in temp_ticks if left_bound <= skew_x(t, 0) <= right_bound]
-    ax1.set_xticks([skew_x(t, 0) for t in valid_ticks])
-    ax1.set_xticklabels(valid_ticks)
+    # Surface-referenced Ticks (starts at -20)
+    temp_ticks = np.arange(-20, 41, 10)
+    ax1.set_xticks([skew_x(t, 0) for t in temp_ticks])
+    ax1.set_xticklabels(temp_ticks)
     
     ax1.set_ylabel("Altitude (km)", fontsize=12)
     ax1.set_xlabel("Temperature (°C)", fontsize=12)
@@ -99,11 +93,11 @@ def main():
 
     # --- PANEL 2: WIND SPEED & BARBS ---
     ax2.plot(wind_plot, z_plot, color='blue', linewidth=2)
-    ax2.set_xlim(0, 50) # Zoomed to 0-50 km/h
+    ax2.set_xlim(0, 50) 
     ax2.set_xlabel("Wind (km/h)", fontsize=12)
     ax2.grid(True, axis='both', alpha=0.2)
     
-    # Wind Barbs: Placed at X=45 and sampled every ~500m
+    # Wind Barbs: Placed at X=45 (right edge)
     step = max(1, len(z_plot) // 14) 
     ax2.barbs(np.ones_like(z_plot[::step]) * 45, z_plot[::step], 
               u_plot[::step], v_plot[::step], length=6, color='black', alpha=0.8)
@@ -116,7 +110,7 @@ def main():
     fig.suptitle(f"Paragliding Sounding (Max Spacing) | Payerne | {ref_time_str} UTC", fontsize=16, y=0.95)
 
     plt.savefig("latest_skewt.png", dpi=150, bbox_inches='tight')
-    print("Success: Generated wide-spacing plot with barbs and tight X-limits.")
+    print("Success: Generated wide-spacing plot with tight X-limits starting at -20C.")
 
 if __name__ == "__main__":
     main()
