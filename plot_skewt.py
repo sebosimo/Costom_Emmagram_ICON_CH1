@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
-import matplotlib.gridspec as gridspec
 from metpy.plots import SkewT
 from metpy.units import units
 import metpy.calc as mpcalc
@@ -23,10 +22,9 @@ def main():
         return
     
     latest_file = max(files, key=os.path.getctime)
-    print(f"Plotting paragliding-focused view from: {latest_file}")
     ds = xr.open_dataset(latest_file)
     
-    # 1. Extract values and assign units
+    # 1. Extract values
     p = ds["P"].values * units.Pa
     t = (ds["T"].values * units.K).to(units.degC)
     u, v = ds["U"].values * units('m/s'), ds["V"].values * units('m/s')
@@ -43,56 +41,55 @@ def main():
 
     # 4. Visualization Setup
     fig = plt.figure(figsize=(12, 12))
-    skew = SkewT(fig, rotation=45)
     
-    # Force the Y-axis to be LINEAR for a better lower-atmosphere perspective
-    skew.ax.set_yscale('linear')
-    skew.ax.set_ylim(1050, 300) 
-    skew.ax.set_xlim(-30, 40)
+    # We use rotation=0 to make it a vertical chart (easier for lapse rates)
+    # We use logarithmic pressure (mimics linear height perfectly)
+    skew = SkewT(fig, rotation=30) # A slight skew (30 instead of 45) helps readability
+    
+    # 5. Set Limits: Focus on lower atmosphere (Paragliding levels)
+    skew.ax.set_ylim(1050, 400) # Surface to ~7km
+    skew.ax.set_xlim(-20, 35)   # Relevant temp range for flight
 
-    # 5. Plotting Data
+    # 6. Plot Data
     skew.plot(p_hpa, t, 'red', linewidth=3, label='Temperature')
     skew.plot(p_hpa, td, 'green', linewidth=3, label='Dewpoint')
+    skew.plot_barbs(p_hpa[::2], u[::2], v[::2], xloc=1.05) # Barbs on the right side
     
-    # FIX: Use xloc to position barbs on the right side of the plot
-    skew.plot_barbs(p_hpa[::2], u[::2], v[::2], xloc=1.05)
-    
-    # 6. Mark Freezing Level
-    z = mpcalc.pressure_to_height_std(p_hpa)
-    # Find where T crosses 0
+    # 7. Add Paragliding Indicators
+    # Mark Freezing Level
     zero_crossings = np.where(np.diff(np.sign(t.m)))[0]
     if zero_crossings.size > 0:
         p_zero = p_hpa[zero_crossings[0]]
-        z_zero = z[zero_crossings[0]].to(units.km).m
-        skew.ax.axhline(p_zero, color='blue', linestyle='--', alpha=0.5)
-        skew.ax.text(-28, p_zero, f" 0°C @ {z_zero:.1f}km", color='blue', verticalalignment='bottom')
+        skew.ax.axhline(p_zero, color='blue', linestyle='--', alpha=0.3)
+        skew.ax.text(-18, p_zero, " 0°C (Freezing Level)", color='blue', alpha=0.7)
 
-    # 7. Linear Supporting Lines
-    skew.plot_dry_adiabats(alpha=0.15, color='orangered', linewidth=1)
-    skew.plot_moist_adiabats(alpha=0.15, color='blue', linewidth=1)
-    skew.plot_mixing_lines(alpha=0.15, color='green', linestyle=':')
+    # 8. Background Lines (Adiabats)
+    skew.plot_dry_adiabats(alpha=0.2, color='orangered', linewidth=1)
+    skew.plot_moist_adiabats(alpha=0.2, color='blue', linewidth=1)
+    skew.plot_mixing_lines(alpha=0.2, color='green', linestyle=':')
     
-    # 8. Labels and Dual Axes
+    # 9. Dual Axis Labels
     skew.ax.set_ylabel("Altitude (km) [Std. Atmosphere]")
     skew.ax.set_xlabel("Temperature (°C)")
     
-    pressure_ticks = [1000, 900, 800, 700, 600, 500, 400, 300]
+    pressure_ticks = [1000, 900, 850, 800, 750, 700, 600, 500, 400]
     skew.ax.set_yticks(pressure_ticks)
     skew.ax.yaxis.set_major_formatter(FuncFormatter(format_pressure_as_km))
     
-    # Secondary hPa axis on the right
+    # Right-side pressure axis
     ax_hpa = skew.ax.twinx()
-    ax_hpa.set_yscale('linear')
-    ax_hpa.set_ylim(1050, 300)
+    ax_hpa.set_yscale('log') # Must match SkewT internal scale
+    ax_hpa.set_ylim(1050, 400)
     ax_hpa.set_yticks(pressure_ticks)
+    ax_hpa.yaxis.set_major_formatter(FuncFormatter(lambda x, p: f'{int(x)}'))
     ax_hpa.set_ylabel("Pressure (hPa)")
 
     ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
-    plt.title(f"Payerne Sounding (Paragliding Perspective) | {ref_time_str} UTC", fontsize=15, pad=20)
-    skew.ax.legend(loc='upper left', frameon=True)
+    plt.title(f"Paragliding Sounding (Payerne) | {ref_time_str} UTC", fontsize=16, pad=20)
+    skew.ax.legend(loc='upper left')
     
     plt.savefig("latest_skewt.png", bbox_inches='tight', dpi=150)
-    print("Success: latest_skewt.png generated with paragliding focus.")
+    print("Success: Readable Skew-T generated.")
 
 if __name__ == "__main__":
     main()
