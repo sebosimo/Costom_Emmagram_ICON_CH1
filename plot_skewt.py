@@ -29,6 +29,7 @@ def main():
 
     z = mpcalc.pressure_to_height_std(p).to(units.km)
     
+    # Scientific conversion to km/h using MetPy units
     u_kmh = u_ms.to('km/h').m
     v_kmh = v_ms.to('km/h').m
     wind_speed_kmh = mpcalc.wind_speed(u_ms, v_ms).to('km/h').m
@@ -49,6 +50,7 @@ def main():
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
+    # Width 18"; wind panel doubled in size (ratio 3:1)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
                                    gridspec_kw={'width_ratios': [3, 1], 'wspace': 0})
     
@@ -72,8 +74,8 @@ def main():
         if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
             ax1.plot([xb, xt], [0, z_max], color='blue', alpha=0.08, zorder=1)
 
-    # 2. Thermal Threshold Lines (Orange Dashed, 0.5C/100m)
-    # Calculated as T = T0 - (5.0 * height_in_km)
+    # 2. 0.5C/100m Helper Lines (Orange Dashed) - ADDED EVERY 10C
+    # Calculated as T = T_surface - (5.0 * height_in_km)
     for t0 in range(-100, 101, 10):
         t_gradient = t0 - (5.0 * z_ref.m)
         x_gradient = skew_x(t_gradient, z_ref.m)
@@ -128,7 +130,7 @@ def main():
     output_dt = ref_dt
     lead_hours = int((output_dt - ref_dt).total_seconds() // 3600)
 
-    title_str = (f"Payerne | ICON-CH1 Run: {ref_dt.strftime('%Y-%m-%d %H:%M')} UTC\n"
+    title_str = (f"Payerne | ICON-CH1 Run: {ref_dt.strftime('%Y-%m-%d %H:%M')} UTC\\n"
                  f"Output: {output_dt.strftime('%Y-%m-%d %H:%M')} UTC (+{lead_hours}h)")
     fig.suptitle(title_str, fontsize=14, y=0.96)
 
