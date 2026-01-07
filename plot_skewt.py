@@ -50,7 +50,7 @@ def main():
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
-    # Width 18"; wind panel doubled in size relative to previous version (ratio 3:1)
+    # Width 18"; wind panel doubled in size (ratio 3:1)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
                                    gridspec_kw={'width_ratios': [3, 1], 'wspace': 0})
     
@@ -68,17 +68,26 @@ def main():
     p_ref = mpcalc.height_to_pressure_std(z_ref)
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
-    # Isotherms, Adiabats, and Mixing Ratio
+    # 1. Tilted Isotherms
     for temp in range(-100, 101, 10):
         xb, xt = skew_x(temp, 0), skew_x(temp, z_max)
         if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
             ax1.plot([xb, xt], [0, z_max], color='blue', alpha=0.08, zorder=1)
 
+    # 2. Dry Adiabats
     for theta in range(-100, 251, 10):
         t_adiabat = mpcalc.dry_lapse(p_ref, (theta + 273.15) * units.K, 1000 * units.hPa).to(units.degC).m
         x_adiabat = skew_x(t_adiabat, z_ref.m)
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
             ax1.plot(x_adiabat, z_ref.m, color='brown', alpha=0.18, linewidth=1.2, zorder=2)
+
+    # 3. Mixing Ratio Lines (RE-ADDED)
+    for w in [0.5, 1, 2, 4, 7, 10, 16, 24, 32]:
+        e_w = mpcalc.vapor_pressure(p_ref, w * units('g/kg'))
+        t_w = mpcalc.dewpoint(e_w).to(units.degC).m
+        x_w = skew_x(t_w, z_ref.m)
+        if np.max(x_w) >= (min_x-padding) and np.min(x_w) <= (max_x+padding):
+            ax1.plot(x_w, z_ref.m, color='green', alpha=0.15, linestyle=':', zorder=2)
 
     # --- PLOT THERMO DATA ---
     ax1.plot(skew_t, z_plot, 'red', linewidth=3, label='Temp', zorder=5)
@@ -93,14 +102,14 @@ def main():
 
     # --- PANEL 2: WIND SPEED & BARBS ---
     ax2.plot(wind_plot, z_plot, color='blue', linewidth=2)
-    ax2.set_xlim(0, 80) # Updated Speed Range
+    ax2.set_xlim(0, 80) 
     ax2.set_xlabel("Wind (km/h)", fontsize=12)
     
     # Vertical helper lines at every 10 km/h
     ax2.set_xticks(np.arange(0, 81, 10))
     ax2.grid(True, axis='both', color='gray', alpha=0.2)
     
-    # Remove shared internal ticks
+    # Hide internal ticks
     ax2.yaxis.set_tick_params(which='both', left=False, right=False)
 
     # Wind Barbs with custom 5/10 km/h increments
