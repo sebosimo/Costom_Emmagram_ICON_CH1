@@ -34,27 +34,30 @@ def main():
     p_hpa, t, td, u, v = p[inds].to(units.hPa), t[inds], td[inds], u[inds], v[inds]
 
     # 3. Visualization Setup
-    # Higher height value (14) relative to width (9) creates a tall canvas
-    fig = plt.figure(figsize=(9, 14))
-    skew = SkewT(fig, rotation=30)
+    # We use a very specific tall figure size (8x14)
+    fig = plt.figure(figsize=(8, 14))
     
-    # --- PHYSICAL DIMENSIONS FIX ---
-    # This forces the internal data area to NOT be a square
-    # Adjusting aspect to 'auto' allows it to fill our tall figure correctly
+    # We use 'rect' to give the plot its own defined space inside the figure
+    # This creates the vertical "pillar" look and prevents the right side from clipping
+    skew = SkewT(fig, rotation=30, rect=(0.12, 0.1, 0.70, 0.85))
+    
+    # Force auto aspect to ensure it fills our tall 'rect'
     skew.ax.set_aspect('auto')
     
-    # --- SCALE ADJUSTMENTS ---
-    # Significant space to the left (-60C)
-    skew.ax.set_xlim(-60, 35)
-    # Start at 1020hPa (Sea level) and cut at 400hPa (~7km)
+    # --- RANGE ADJUSTMENTS ---
+    # Left cut: -40 (enough for dry dewpoints) 
+    # Right expand: 45 (enough for hot summer ground temps)
+    skew.ax.set_xlim(-40, 45)
+    
+    # Vertical range: 1020hPa to 400hPa (~7km)
     skew.ax.set_ylim(1020, 400) 
 
     # 4. Plot Data
     skew.plot(p_hpa, t, 'red', linewidth=3, label='Temperature')
     skew.plot(p_hpa, td, 'green', linewidth=3, label='Dewpoint')
     
-    # Wind barbs (Shifted right with xloc)
-    skew.plot_barbs(p_hpa[::3], u[::3], v[::3], xloc=1.05)
+    # Place barbs strictly at the edge of the plot area
+    skew.plot_barbs(p_hpa[::3], u[::3], v[::3], xloc=1.0)
     
     # 5. Supporting Adiabats
     skew.plot_dry_adiabats(alpha=0.15, color='orangered', linewidth=0.8)
@@ -62,38 +65,36 @@ def main():
     skew.plot_mixing_lines(alpha=0.15, color='green', linestyle=':')
 
     # 6. ALTITUDE LABELS & GRID (Every 0.5 km)
-    # 0km to 8km in 0.5km steps
     km_all = np.arange(0, 8.5, 0.5) 
     p_levels = mpcalc.height_to_pressure_std(km_all * units.km).to(units.hPa).m
     
-    # Major ticks for labels and helper lines
     skew.ax.yaxis.set_major_locator(FixedLocator(p_levels))
     skew.ax.yaxis.set_minor_locator(NullLocator()) 
     
     def km_formatter(x, pos):
-        # Match label to the actual km_all array index
+        # Identify exact km values from our list to prevent mismatch
         if pos < len(km_all):
             val = km_all[pos]
-            if val % 1 == 0: # Only label 1km, 2km, etc.
+            if val % 1 == 0:
                 return f"{int(val)} km"
         return "" 
 
     skew.ax.yaxis.set_major_formatter(FuncFormatter(km_formatter))
     
-    # Draw horizontal lines for every 0.5km step
+    # Stronger helper lines for every 0.5km step
     skew.ax.grid(True, which='major', axis='y', color='black', alpha=0.15, linestyle='-')
     
     skew.ax.set_ylabel("Altitude (km)")
     skew.ax.set_xlabel("Temperature (°C)")
     
-    # 7. Title & Legend
+    # 7. Metadata and Title
     ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
-    plt.title(f"Paragliding Sounding (Payerne) | {ref_time_str} UTC", fontsize=15, pad=25)
+    plt.title(f"Paragliding Sounding (Payerne) | {ref_time_str} UTC", fontsize=15, pad=30)
     skew.ax.legend(loc='upper left', frameon=True)
 
-    # 8. Save (NO bbox_inches='tight' as it ruins the aspect ratio)
+    # 8. Save with enough padding for wind barbs
     plt.savefig("latest_skewt.png", dpi=150)
-    print("Success: Tall-format plot with correct altitude labels saved.")
+    print("Success: Tall-format summer-ready plot generated.")
 
 if __name__ == "__main__":
     main()
