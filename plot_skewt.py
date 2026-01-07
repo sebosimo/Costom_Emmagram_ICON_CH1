@@ -29,7 +29,7 @@ def main():
 
     z = mpcalc.pressure_to_height_std(p).to(units.km)
     
-    # Scientific conversion to km/h
+    # Scientific conversion to km/h using MetPy units
     u_kmh = u_ms.to('km/h').m
     v_kmh = v_ms.to('km/h').m
     wind_speed_kmh = mpcalc.wind_speed(u_ms, v_ms).to('km/h').m
@@ -50,6 +50,7 @@ def main():
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
+    # Width 18"; wind panel doubled in size (ratio 3:1)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
                                    gridspec_kw={'width_ratios': [3, 1], 'wspace': 0})
     
@@ -67,25 +68,26 @@ def main():
     p_ref = mpcalc.height_to_pressure_std(z_ref)
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
-    # Isotherms, Dry Adiabats, and Mixing Ratio Lines
+    # 1. Isotherms and 2. Thermal Threshold Lines (0.5C / 100m)
     for temp in range(-100, 101, 10):
         xb, xt = skew_x(temp, 0), skew_x(temp, z_max)
         if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
-            # 1. Tilted Isotherms
+            # Blue Tilted Isotherms
             ax1.plot([xb, xt], [0, z_max], color='blue', alpha=0.08, zorder=1)
             
-            # 2. Thermal Threshold Lines (0.5C / 100m = 5C / 1km)
-            # Re-added every 10C with same alpha (0.08) as isotherms
+            # Orange Dashed Thermal Threshold Lines (5C per km = 0.5C per 100m)
             t_thresh = temp - (5.0 * z_ref.m)
             ax1.plot(skew_x(t_thresh, z_ref.m), z_ref.m, color='orange', 
                      linestyle='--', linewidth=1, alpha=0.08, zorder=1)
 
+    # 3. Dry Adiabats
     for theta in range(-100, 251, 10):
         t_adiabat = mpcalc.dry_lapse(p_ref, (theta + 273.15) * units.K, 1000 * units.hPa).to(units.degC).m
         x_adiabat = skew_x(t_adiabat, z_ref.m)
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
             ax1.plot(x_adiabat, z_ref.m, color='brown', alpha=0.18, linewidth=1.2, zorder=2)
 
+    # 4. Mixing Ratio Lines
     for w in [0.5, 1, 2, 4, 7, 10, 16, 24, 32]:
         e_w = mpcalc.vapor_pressure(p_ref, w * units('g/kg'))
         t_w = mpcalc.dewpoint(e_w).to(units.degC).m
@@ -94,15 +96,14 @@ def main():
             ax1.plot(x_w, z_ref.m, color='green', alpha=0.15, linestyle=':', zorder=2)
 
     # --- PLOT THERMO DATA ---
-    ax1.plot(skew_t, z_plot, 'red', linewidth=3, label='Temp', zorder=5)
-    ax1.plot(skew_td, z_plot, 'green', linewidth=3, label='Dewpoint', zorder=5)
+    ax1.plot(skew_t, z_plot, 'red', linewidth=3, zorder=5)
+    ax1.plot(skew_td, z_plot, 'green', linewidth=3, zorder=5)
 
     visible_ticks = [t for t in np.arange(-100, 101, 10) if (min_x-padding) <= t <= (max_x+padding)]
     ax1.set_xticks(visible_ticks)
     ax1.set_xticklabels(visible_ticks)
     ax1.set_ylabel("Altitude (km)", fontsize=12)
     ax1.set_xlabel("Temperature (°C)", fontsize=12)
-    ax1.legend(loc='upper right', frameon=True, fontsize=10)
 
     # --- PANEL 2: WIND SPEED & BARBS ---
     ax2.plot(wind_plot, z_plot, color='blue', linewidth=2)
@@ -123,7 +124,7 @@ def main():
 
     # --- ENHANCED TITLE ---
     ref_dt = datetime.datetime.fromisoformat(ds.attrs["ref_time"])
-    output_dt = ref_dt # Horizon P0DT0H
+    output_dt = ref_dt
     lead_hours = int((output_dt - ref_dt).total_seconds() // 3600)
 
     title_str = (f"Payerne | ICON-CH1 Run: {ref_dt.strftime('%Y-%m-%d %H:%M')} UTC\n"
