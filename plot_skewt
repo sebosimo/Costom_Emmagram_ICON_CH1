@@ -15,47 +15,45 @@ def format_pressure_as_km(x, pos):
 def main():
     files = glob.glob(os.path.join(CACHE_DIR, "*.nc"))
     if not files:
-        print("Error: No cached data found.")
+        print("No cache data. Run fetch_data.py first.")
         return
     
     latest_file = max(files, key=os.path.getctime)
-    print(f"Generating plot from: {latest_file}")
+    print(f"Plotting from: {latest_file}")
     ds = xr.open_dataset(latest_file)
     
-    # 1. Extract values and assign units
+    # Unit Assignments
     p = ds["P"].values * units.Pa
     t = (ds["T"].values * units.K).to(units.degC)
     u, v = ds["U"].values * units('m/s'), ds["V"].values * units('m/s')
     
-    # 2. Dewpoint Calculation
+    # Dewpoint Logic
     if ds.attrs["HUM_TYPE"] == "RELHUM":
         td = mpcalc.dewpoint_from_relative_humidity(t, ds["HUM"].values / 100.0)
     else:
         td = mpcalc.dewpoint_from_specific_humidity(p, t, ds["HUM"].values * units('kg/kg'))
 
-    # 3. Plotting
+    # Sort descending
+    inds = p.argsort()[::-1]
+    p_hpa, t, td, u, v = p[inds].to(units.hPa), t[inds], td[inds], u[inds], v[inds]
+
+    # Visualization
     fig = plt.figure(figsize=(10, 12))
     skew = SkewT(fig, rotation=45)
-    
-    p_hpa = p.to(units.hPa)
     skew.plot(p_hpa, t, 'r', linewidth=2, label='Temperature')
     skew.plot(p_hpa, td, 'g', linewidth=2, label='Dewpoint')
     skew.plot_barbs(p_hpa[::5], u[::5], v[::5])
     
-    # Visual Polish
-    skew.plot_dry_adiabats(alpha=0.1, color='red')
-    skew.plot_moist_adiabats(alpha=0.1, color='blue')
     skew.ax.set_ylim(1050, 100)
-    skew.ax.set_xlim(-40, 40)
     skew.ax.yaxis.set_major_formatter(FuncFormatter(format_pressure_as_km))
     skew.ax.set_ylabel("Altitude (km) [Std. Atmosphere]")
     
-    ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
-    plt.title(f"ICON-CH1 Payerne | {ref_time_str} UTC", fontsize=14)
-    skew.ax.legend(loc='upper left')
+    time_utc = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
+    plt.title(f"ICON-CH1 Payerne | {time_utc} UTC")
+    plt.legend(loc='upper left')
     
-    plt.savefig("latest_skewt.png", bbox_inches='tight', dpi=150)
-    print("Success: latest_skewt.png generated.")
+    plt.savefig("latest_skewt.png", bbox_inches='tight')
+    print("Success: latest_skewt.png saved.")
 
 if __name__ == "__main__":
     main()
