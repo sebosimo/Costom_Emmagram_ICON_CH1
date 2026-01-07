@@ -33,21 +33,21 @@ def main():
     inds = p.argsort()[::-1]
     p_hpa, t, td, u, v = p[inds].to(units.hPa), t[inds], td[inds], u[inds], v[inds]
 
-    # 3. Visualization Setup (Tall Form Factor)
+    # 3. Visualization Setup (Restored to tall aspect ratio 10x12)
     fig = plt.figure(figsize=(10, 12))
     skew = SkewT(fig, rotation=30)
     
     # --- SCALE ADJUSTMENTS ---
-    # More space to the left (-60 to 35)
+    # Shifted further left to -60C to avoid dewpoint cutoff
     skew.ax.set_xlim(-60, 35)
-    # Tight bottom (1020 hPa) to remove gaps
+    # Tight bottom at 1020 hPa to ground the plot, cut at 400 hPa
     skew.ax.set_ylim(1020, 400) 
 
     # 4. Plot Data
     skew.plot(p_hpa, t, 'red', linewidth=3, label='Temperature')
     skew.plot(p_hpa, td, 'green', linewidth=3, label='Dewpoint')
     
-    # Wind barbs on the far right
+    # Position barbs cleanly on the right
     skew.plot_barbs(p_hpa[::3], u[::3], v[::3], xloc=1.02)
     
     # 5. Supporting Adiabats
@@ -56,25 +56,26 @@ def main():
     skew.plot_mixing_lines(alpha=0.1, color='green', linestyle=':')
 
     # 6. FIXED Altitude Ticks (Every 0.5 km)
-    # Define heights in kilometers for major and minor markers
+    # Generate list of heights: 0, 0.5, 1.0, 1.5... up to 8km
     km_all = np.arange(0, 8.5, 0.5) 
-    # Convert km heights to standard pressure levels for placement
+    # Convert those heights to the standard pressure levels where they belong
     p_levels = mpcalc.height_to_pressure_std(km_all * units.km).to(units.hPa).m
     
-    # Force EXACT positions and remove automatic secondary ticks
+    # Force the Y-axis to use these specific pressure points
     skew.ax.yaxis.set_major_locator(FixedLocator(p_levels))
-    skew.ax.yaxis.set_minor_locator(NullLocator()) # Removes those unnecessary small ticks
+    skew.ax.yaxis.set_minor_locator(NullLocator()) 
     
-    # Formatter: Only label whole km, leave 0.5 km lines unlabelled for clarity
+    # Custom Formatter: Label 1km, 2km etc. Leave 0.5km lines blank but visible
     def km_formatter(x, pos):
-        val = km_all[pos] if pos < len(km_all) else None
-        if val is not None and val % 1 == 0:
-            return f"{int(val)} km"
-        return "" # No text for the 0.5 steps
+        if pos < len(km_all):
+            val = km_all[pos]
+            if val % 1 == 0: # Only whole numbers
+                return f"{int(val)} km"
+        return "" 
 
     skew.ax.yaxis.set_major_formatter(FuncFormatter(km_formatter))
     
-    # Add horizontal grid lines for EVERY 0.5km step
+    # Grid lines at every 0.5km tick for easy horizontal reading
     skew.ax.grid(True, which='major', axis='y', color='black', alpha=0.1, linestyle='-')
     
     skew.ax.set_ylabel("Altitude (km)")
@@ -86,7 +87,7 @@ def main():
     skew.ax.legend(loc='upper left', frameon=True)
 
     plt.savefig("latest_skewt.png", bbox_inches='tight', dpi=150)
-    print("Success: Tall-format Paragliding Skew-T generated.")
+    print("Success: Tall-format plot with 0.5km helper lines generated.")
 
 if __name__ == "__main__":
     main()
