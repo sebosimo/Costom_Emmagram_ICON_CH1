@@ -21,44 +21,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      # 1. Faster Weather Data Cache
+      # 1. Cache Weather Data
       - name: Cache Weather Data
-        uses: actions/cache@v4 # Upgraded to v4
+        uses: actions/cache@v4
         with:
           path: cache_data
           key: weather-v1-${{ github.run_id }}
           restore-keys: weather-v1-
 
-      # 2. Ultra-fast Python Setup with uv
+      # 2. Setup uv (Creates virtual env automatically)
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
           cache-dependency-path: "requirements.txt"
 
-      # 3. Lean System Dependencies
-      # We skip 'apt update' to save ~15 seconds. 
-      # If it ever fails, it will just fall back to a slower run next time.
+      # 3. Optimized System Dependencies
       - name: Install System Dependencies
         run: |
           sudo apt-get install -y libeccodes-dev || (sudo apt-get update && sudo apt-get install -y libeccodes-dev)
 
-      # 4. Lightning Fast Python Install
-      # uv installs from cache in < 2 seconds
-      - name: Install Python Dependencies
-        run: uv pip install -r requirements.txt --system
+      # 4. Install Python Dependencies in a venv (uv handles this)
+      - name: Sync dependencies
+        run: uv pip install -r requirements.txt
 
-      # 5. Fetch Step
+      # 5. Fetch Step (Using 'uv run' to ensure venv is used)
       - name: Fetch Data
         if: github.event.inputs.plot_only != 'true'
         env:
           FORCE_REFRESH: ${{ github.event.inputs.force_refresh }}
-        run: python fetch_data.py
+        run: uv run python fetch_data.py
 
-      # 6. Plot Step
+      # 6. Plot Step (Using 'uv run')
       - name: Generate Plot
-        run: python plot_skewt.py
+        run: uv run python plot_skewt.py
 
+      # 7. Upload Plot
       - name: Upload Plot
         uses: actions/upload-artifact@v4
         with:
