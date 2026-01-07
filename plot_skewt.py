@@ -47,13 +47,13 @@ def main():
     u_plot, v_plot = u_plot[mask], v_plot[mask]
 
     # --- SKEW CONFIGURATION ---
-    SKEW_FACTOR = 8 
+    SKEW_FACTOR = 5 
     def skew_x(temp, height):
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
-    # Width 30, with 6:1 ratio to provide more room for the wind plot
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(30, 10), sharey=True, 
+    # Width 18, with 6:1 ratio to provide more room for the wind plot
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
                                    gridspec_kw={'width_ratios': [6, 1], 'wspace': 0})
     
     ax1.set_ylim(0, z_max)
