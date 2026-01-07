@@ -40,7 +40,7 @@ def main():
     u_plot, v_plot = u_plot[mask], v_plot[mask]
 
     # --- SKEW CONFIGURATION ---
-    SKEW_FACTOR = 12 
+    SKEW_FACTOR = 5 
     def skew_x(temp, height):
         return temp + (height * SKEW_FACTOR)
 
