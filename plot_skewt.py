@@ -52,7 +52,7 @@ def main():
     # 3. Figure Setup
     # Width updated to 18; ratio kept at 6:1 for wind room
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
-                                   gridspec_kw={'width_ratios': [6, 1], 'wspace': 0})
+                                   gridspec_kw={'width_ratios': [4, 1], 'wspace': 0})
     
     ax1.set_ylim(0, z_max)
     
