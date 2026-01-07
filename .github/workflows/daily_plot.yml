@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       force_refresh:
-        description: 'Ignore cache and download fresh data?'
+        description: 'Download fresh data (True) or use cache (False)?'
+        type: boolean
+        default: false
+      plot_only:
+        description: 'Skip fetch step entirely and only re-plot?'
         type: boolean
         default: false
   schedule:
@@ -16,33 +20,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      # 1. Cache the Weather Data (.nc files)
       - name: Cache Weather Data
         uses: actions/cache@v3
         with:
           path: cache_data
-          key: ${{ runner.os }}-weather-v1-${{ github.run_id }}
+          key: weather-data-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-weather-v1-
+            weather-data-
 
+      # 2. Setup Python with built-in caching for pip
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip' # This speeds up dependency installs automatically
 
-      - name: Dependencies
+      # 3. Install System Dependencies (LibecCodes is hard to cache, keep as is)
+      - name: Install System Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y libeccodes-dev
+
+      # 4. Install Python Dependencies (Will use cache from step 2 if possible)
+      - name: Install Python Dependencies
+        run: |
           pip install metpy xarray cfgrib meteodata-lab pandas matplotlib netCDF4
 
+      # 5. Fetch Data (Only runs if plot_only is False)
       - name: Fetch Data
+        if: github.event.inputs.plot_only != 'true'
         env:
           FORCE_REFRESH: ${{ github.event.inputs.force_refresh }}
         run: python fetch_data.py
 
+      # 6. Generate Plot (Always runs)
       - name: Generate Plot
         run: python plot_skewt.py
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Plot
+        uses: actions/upload-artifact@v4
         with:
           name: skewt-plot
           path: "*.png"
