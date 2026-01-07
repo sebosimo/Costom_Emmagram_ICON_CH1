@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      # 1. Cache Weather Data (.nc files)
+      # 1. Restore Weather Data from cache
       - name: Cache Weather Data
         uses: actions/cache@v3
         with:
@@ -30,7 +30,7 @@ jobs:
           restore-keys: |
             weather-data-
 
-      # 2. Setup Python with advanced Pip caching
+      # 2. Setup Python with requirements.txt tracking
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -38,36 +38,34 @@ jobs:
           cache: 'pip'
           cache-dependency-path: 'requirements.txt'
 
-      # 3. Optimized System Dependencies
-      # We check for eccodes first to avoid unnecessary 'apt update' time
+      # 3. Corrected System Dependencies
       - name: Install System Dependencies
         run: |
           if ! command -v bufr_dump &> /dev/null; then
             sudo apt-get update
             sudo apt-get install -y libeccodes-dev
           else
-            print("libeccodes already installed, skipping...")
+            echo "libeccodes already installed, skipping..."
           fi
 
-      # 4. Install Python Dependencies from requirements.txt
-      # This step will finish in ~5 seconds if the cache hits
+      # 4. Fast install of Python packages
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 5. Fetch Data (Only runs if plot_only is False)
+      # 5. Fetch Step (Toggleable)
       - name: Fetch Data
         if: github.event.inputs.plot_only != 'true'
         env:
           FORCE_REFRESH: ${{ github.event.inputs.force_refresh }}
         run: python fetch_data.py
 
-      # 6. Generate Plot
+      # 6. Plot Step
       - name: Generate Plot
         run: python plot_skewt.py
 
-      # 7. Upload the PNG
+      # 7. Final Artifact Upload
       - name: Upload Plot
         uses: actions/upload-artifact@v4
         with:
