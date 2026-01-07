@@ -29,7 +29,7 @@ def main():
 
     z = mpcalc.pressure_to_height_std(p).to(units.km)
     
-    # Scientific conversion to km/h using MetPy units
+    # Scientific conversion to km/h
     u_kmh = u_ms.to('km/h').m
     v_kmh = v_ms.to('km/h').m
     wind_speed_kmh = mpcalc.wind_speed(u_ms, v_ms).to('km/h').m
@@ -50,7 +50,6 @@ def main():
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
-    # Width 18"; wind panel doubled in size (ratio 3:1)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
                                    gridspec_kw={'width_ratios': [3, 1], 'wspace': 0})
     
@@ -68,7 +67,7 @@ def main():
     p_ref = mpcalc.height_to_pressure_std(z_ref)
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
-    # Reference lines (Isotherms, Adiabats, Mixing Ratio)
+    # Standard Isotherms and Dry Adiabats
     for temp in range(-100, 101, 10):
         xb, xt = skew_x(temp, 0), skew_x(temp, z_max)
         if max(xb, xt) >= (min_x-padding) and min(xb, xt) <= (max_x+padding):
@@ -80,6 +79,7 @@ def main():
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
             ax1.plot(x_adiabat, z_ref.m, color='brown', alpha=0.18, linewidth=1.2, zorder=2)
 
+    # Mixing Ratio Lines
     for w in [0.5, 1, 2, 4, 7, 10, 16, 24, 32]:
         e_w = mpcalc.vapor_pressure(p_ref, w * units('g/kg'))
         t_w = mpcalc.dewpoint(e_w).to(units.degC).m
@@ -87,27 +87,30 @@ def main():
         if np.max(x_w) >= (min_x-padding) and np.min(x_w) <= (max_x+padding):
             ax1.plot(x_w, z_ref.m, color='green', alpha=0.15, linestyle=':', zorder=2)
 
-    # --- PLOT THERMO DATA WITH MARKERS ---
-    # Added marker='o' and markersize=3 to visualize individual model levels
-    ax1.plot(skew_t, z_plot, 'red', linewidth=3, label='Temp', zorder=5, marker='o', markersize=3)
-    ax1.plot(skew_td, z_plot, 'green', linewidth=3, label='Dewpoint', zorder=5, marker='o', markersize=3)
+    # --- THERMAL THRESHOLD LINE (0.5C / 100m) ---
+    # We plot this relative to the surface temperature to show the 'critical' slope
+    t0 = t_plot[0]
+    t_threshold = t0 - (5.0 * z_ref.m) # 5C per km = 0.5C per 100m
+    ax1.plot(skew_x(t_threshold, z_ref.m), z_ref.m, color='orange', 
+             linestyle='--', linewidth=1.5, alpha=0.6, label='Thermal Threshold (0.5°/100m)')
+
+    # --- PLOT THERMO DATA ---
+    ax1.plot(skew_t, z_plot, 'red', linewidth=3, label='Temp', zorder=5)
+    ax1.plot(skew_td, z_plot, 'green', linewidth=3, label='Dewpoint', zorder=5)
 
     visible_ticks = [t for t in np.arange(-100, 101, 10) if (min_x-padding) <= t <= (max_x+padding)]
     ax1.set_xticks(visible_ticks)
     ax1.set_xticklabels(visible_ticks)
     ax1.set_ylabel("Altitude (km)", fontsize=12)
     ax1.set_xlabel("Temperature (°C)", fontsize=12)
-    ax1.legend(loc='upper right', frameon=True)
+    ax1.legend(loc='upper right', frameon=True, fontsize=10)
 
-    # --- PANEL 2: WIND SPEED WITH MARKERS ---
-    # Added marker='o' and markersize=3 to visualize wind data points
-    ax2.plot(wind_plot, z_plot, color='blue', linewidth=2, marker='o', markersize=3)
+    # --- PANEL 2: WIND SPEED & BARBS ---
+    ax2.plot(wind_plot, z_plot, color='blue', linewidth=2)
     ax2.set_xlim(0, 80) 
     ax2.set_xlabel("Wind (km/h)", fontsize=12)
     ax2.set_xticks(np.arange(0, 81, 10))
     ax2.grid(True, axis='both', color='gray', alpha=0.2)
-    
-    # Hide internal shared ticks
     ax2.yaxis.set_tick_params(which='both', left=False, right=False)
 
     step = max(1, len(z_plot) // 14) 
@@ -119,9 +122,18 @@ def main():
     ax2.spines['left'].set_visible(False)
     ax1.spines['right'].set_visible(False)
 
-    # 4. Final Polish
-    ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
-    fig.suptitle(f"Dynamic Sounding | ICON-CH1 | {ref_time_str} UTC", fontsize=16, y=0.95)
+    # --- ENHANCED TITLE ---
+    # Model Run (Reference Time)
+    ref_dt = datetime.datetime.fromisoformat(ds.attrs["ref_time"])
+    # Forecast Time (Assuming Horizon P0DT0H as per fetch_data.py)
+    # If the horizon changes, this would be ref_dt + delta
+    output_dt = ref_dt 
+    lead_hours = int((output_dt - ref_dt).total_seconds() // 3600)
+
+    title_str = (f"Payerne | ICON-CH1 Run: {ref_dt.strftime('%Y-%m-%d %H:%M')} UTC\n"
+                 f"Output: {output_dt.strftime('%Y-%m-%d %H:%M')} UTC (+{lead_hours}h)")
+    fig.suptitle(title_str, fontsize=14, y=0.96)
+
     plt.savefig("latest_skewt.png", dpi=150, bbox_inches='tight')
 
 if __name__ == "__main__":
