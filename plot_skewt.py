@@ -27,7 +27,7 @@ def main():
     else:
         td = mpcalc.dewpoint_from_specific_humidity(p, t, ds["HUM"].values * units('kg/kg'))
 
-    # Calculate Altitude (km) and Speed (km/h)
+    # Calculate Standard Altitude (km) and Speed (km/h)
     z = mpcalc.pressure_to_height_std(p).to(units.km)
     wind_speed = mpcalc.wind_speed(u, v).to('km/h')
 
@@ -42,24 +42,28 @@ def main():
     u_plot, v_plot = u_plot[mask], v_plot[mask]
 
     # --- SKEW CONFIGURATION ---
-    SKEW_FACTOR = 12  # Reverted to 12
+    SKEW_FACTOR = 12 
     def skew_x(temp, height):
         return temp + (height * SKEW_FACTOR)
 
     # 3. Figure Setup
-    # Increased width to 18 to increase x-axis spacing
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10), sharey=True, 
-                                   gridspec_kw={'width_ratios': [6, 1], 'wspace': 0})
+    # Width 22 and ratio 8:1 maximizes the pixels-per-degree Celsius
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(22, 10), sharey=True, 
+                                   gridspec_kw={'width_ratios': [8, 1], 'wspace': 0})
     
     ax1.set_ylim(0, z_max)
-    # Surface-based clipping for -40 to 40
-    ax1.set_xlim(skew_x(-40, 0), skew_x(40, 7)) 
+    
+    # REMOVE EMPTY SPACE: Right limit is set to 45 (just past 40C at surface)
+    # Left limit is dynamic to the minimum dewpoint to prune unused left space
+    left_bound = skew_x(np.min(td_plot) - 5, 0)
+    right_bound = 45 
+    ax1.set_xlim(left_bound, right_bound)
 
     # --- DRAW HELPER LINES ---
     z_ref = np.linspace(0, z_max, 100) * units.km
     p_ref = mpcalc.height_to_pressure_std(z_ref)
 
-    # Horizontal Altitude Lines (Constant Z)
+    # Horizontal Altitude Lines
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
     # Tilted Isotherms (Every 10°C)
@@ -68,7 +72,6 @@ def main():
                  color='blue', alpha=0.08, linestyle='-', zorder=1)
 
     # Dry Adiabats (Potential Temperature)
-    # Because the x-axis is wider, these will look more slanted
     for theta in range(-60, 201, 10):
         theta_val = (theta + 273.15) * units.K
         t_adiabat = mpcalc.dry_lapse(p_ref, theta_val, 1000 * units.hPa).to(units.degC).m
@@ -84,10 +87,11 @@ def main():
     ax1.plot(skew_x(t_plot, z_plot), z_plot, 'red', linewidth=3, label='Temp', zorder=5)
     ax1.plot(skew_x(td_plot, z_plot), z_plot, 'green', linewidth=3, label='Dewpoint', zorder=5)
 
-    # Temperature ticks at the bottom (surface)
-    temp_ticks = np.arange(-40, 41, 10)
-    ax1.set_xticks([skew_x(t, 0) for t in temp_ticks])
-    ax1.set_xticklabels(temp_ticks)
+    # Label only the relevant temperature range at the surface
+    temp_ticks = np.arange(-60, 51, 10)
+    valid_ticks = [t for t in temp_ticks if left_bound <= skew_x(t, 0) <= right_bound]
+    ax1.set_xticks([skew_x(t, 0) for t in valid_ticks])
+    ax1.set_xticklabels(valid_ticks)
     
     ax1.set_ylabel("Altitude (km)", fontsize=12)
     ax1.set_xlabel("Temperature (°C)", fontsize=12)
@@ -95,11 +99,11 @@ def main():
 
     # --- PANEL 2: WIND SPEED & BARBS ---
     ax2.plot(wind_plot, z_plot, color='blue', linewidth=2)
-    ax2.set_xlim(0, 50) 
+    ax2.set_xlim(0, 50) # Zoomed to 0-50 km/h
     ax2.set_xlabel("Wind (km/h)", fontsize=12)
     ax2.grid(True, axis='both', alpha=0.2)
     
-    # Wind Barbs: Placed at X=45 (right edge)
+    # Wind Barbs: Placed at X=45 and sampled every ~500m
     step = max(1, len(z_plot) // 14) 
     ax2.barbs(np.ones_like(z_plot[::step]) * 45, z_plot[::step], 
               u_plot[::step], v_plot[::step], length=6, color='black', alpha=0.8)
@@ -109,10 +113,10 @@ def main():
 
     # 4. Final Polish
     ref_time_str = datetime.datetime.fromisoformat(ds.attrs["ref_time"]).strftime('%Y-%m-%d %H:%M')
-    fig.suptitle(f"Paragliding Sounding (Wide-X) | Payerne | {ref_time_str} UTC", fontsize=16, y=0.95)
+    fig.suptitle(f"Paragliding Sounding (Max Spacing) | Payerne | {ref_time_str} UTC", fontsize=16, y=0.95)
 
     plt.savefig("latest_skewt.png", dpi=150, bbox_inches='tight')
-    print(f"Success: Wide-X profile generated with Skew {SKEW_FACTOR}.")
+    print("Success: Generated wide-spacing plot with barbs and tight X-limits.")
 
 if __name__ == "__main__":
     main()
