@@ -64,7 +64,7 @@ def main():
     padding = 5
     ax1.set_xlim(min_x - padding, max_x + padding)
 
-    # --- DRAW HELPER LINES (UPDATED TO 5°C INTERVALS) ---
+    # --- DRAW HELPER LINES (5°C INTERVALS) ---
     z_ref = np.linspace(0, z_max, 100) * units.km
     p_ref = mpcalc.height_to_pressure_std(z_ref)
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
@@ -80,7 +80,6 @@ def main():
         t_grad_top = temp_base - (5.0 * z_max)
         x_grad_top = skew_x(t_grad_top, z_max)
         x_grad_bottom = skew_x(temp_base, 0)
-
         if max(x_grad_bottom, x_grad_top) >= (min_x-padding) and min(x_grad_bottom, x_grad_top) <= (max_x+padding):
             ax1.plot([x_grad_bottom, x_grad_top], [0, z_max], color='orange', 
                      linestyle='--', linewidth=1.2, alpha=0.3, zorder=1)
@@ -104,13 +103,12 @@ def main():
     # Gradient-colored Temperature Trace
     dt = np.diff(t_plot)
     dz = np.diff(z_plot)
-    # lapse_rate: Positive = Cooling with height (Green), Negative = Warming/Inversion (Red)
     lapse_rate = - (dt / dz) 
     
     points = np.array([skew_t, z_plot]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
     
-    # Color scheme: Red (low values/inversions) -> Yellow -> Green (high values/unstable)
+    # Red = Stable/Inversion, Green = Unstable
     norm = Normalize(vmin=-3, vmax=10) 
     cmap = plt.get_cmap('RdYlGn') 
     
@@ -118,10 +116,10 @@ def main():
     lc.set_array(lapse_rate)
     ax1.add_collection(lc)
 
-    # Dewpoint remains solid green
-    ax1.plot(skew_td, z_plot, 'green', linewidth=3, zorder=5, alpha=0.8)
+    # Dewpoint updated to Black (not in RdYlGn colormap)
+    ax1.plot(skew_td, z_plot, color='black', linewidth=3, zorder=5, alpha=0.8)
 
-    # Axis ticks every 5°C
+    # X-Axis Ticks at 5°C
     visible_ticks = [t for t in np.arange(-150, 151, 5) if (min_x-padding) <= t <= (max_x+padding)]
     ax1.set_xticks(visible_ticks)
     ax1.set_xticklabels(visible_ticks)
@@ -145,10 +143,14 @@ def main():
     ax2.spines['left'].set_visible(False)
     ax1.spines['right'].set_visible(False)
 
-    # --- TITLE FORMAT ---
+    # --- REVERTED TITLE FORMAT (WITH COLOR INFO ADDED) ---
     ref_dt = datetime.datetime.fromisoformat(ds.attrs["ref_time"])
+    output_dt = ref_dt
+    lead_hours = int((output_dt - ref_dt).total_seconds() // 3600)
+
     title_str = (f"Payerne | ICON-CH1 Run: {ref_dt.strftime('%Y-%m-%d %H:%M')} UTC\n"
-                 f"Temp Color: Lapse Rate (Red = Stable/Inversion | Green = Unstable)")
+                 f"Output: {output_dt.strftime('%Y-%m-%d %H:%M')} UTC (+{lead_hours}h)\n"
+                 f"Temp: Lapse Rate (Red=Stable, Green=Unstable) | Dewpoint: Black")
     fig.suptitle(title_str, fontsize=14, y=0.96)
 
     plt.savefig("latest_skewt.png", dpi=150, bbox_inches='tight')
