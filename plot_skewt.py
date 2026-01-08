@@ -68,7 +68,7 @@ def main():
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
 
     # 1. Isotherms (Blue) and 2. Thermal Threshold (Orange Dashed 0.5C/100m)
-    for temp_base in range(-150, 151, 10):
+    for temp_base in range(-150, 151, 5):
         # Isotherm coordinates
         xb, xt = skew_x(temp_base, 0), skew_x(temp_base, z_max)
         
@@ -86,10 +86,10 @@ def main():
             
             # Draw Thermal Gradient
             ax1.plot([x_grad_bottom, x_grad_top], [0, z_max], color='orange', 
-                     linestyle='--', linewidth=1, alpha=0.08, zorder=1)
+                     linestyle='--', linewidth=1, alpha=0.18, zorder=1)
 
     # 3. Dry Adiabats (Brown)
-    for theta in range(-150, 301, 10):
+    for theta in range(-150, 301, 5):
         t_adiabat = mpcalc.dry_lapse(p_ref, (theta + 273.15) * units.K, 1000 * units.hPa).to(units.degC).m
         x_adiabat = skew_x(t_adiabat, z_ref.m)
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
