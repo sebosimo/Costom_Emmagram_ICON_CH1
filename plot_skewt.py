@@ -64,7 +64,7 @@ def main():
     padding = 5
     ax1.set_xlim(min_x - padding, max_x + padding)
 
-    # --- DRAW HELPER LINES (5°C INTERVALS) ---
+    # --- DRAW HELPER LINES ---
     z_ref = np.linspace(0, z_max, 100) * units.km
     p_ref = mpcalc.height_to_pressure_std(z_ref)
     ax1.grid(True, axis='y', color='gray', alpha=0.3, linestyle='-', linewidth=0.8)
@@ -91,16 +91,18 @@ def main():
         if np.max(x_adiabat) >= (min_x-padding) and np.min(x_adiabat) <= (max_x+padding):
             ax1.plot(x_adiabat, z_ref.m, color='brown', alpha=0.18, linewidth=1.2, zorder=2)
 
-    # 4. Mixing Ratio Lines (Green)
-    for w in [0.5, 1, 2, 4, 7, 10, 16, 24, 32]:
-        e_w = mpcalc.vapor_pressure(p_ref, w * units('g/kg'))
+    # 4. Mixing Ratio Lines (Green) - UPDATED TO 5°C Steps
+    # We loop through a temperature range and calculate mixing ratio from T at Surface
+    for t_start in range(-60, 61, 5):
+        # Calculate mixing ratio for saturation at this temperature and surface pressure (approx 1000hPa)
+        w_sat = mpcalc.mixing_ratio_from_relative_humidity(1000 * units.hPa, t_start * units.degC, 100 * units.percent)
+        e_w = mpcalc.vapor_pressure(p_ref, w_sat)
         t_w = mpcalc.dewpoint(e_w).to(units.degC).m
         x_w = skew_x(t_w, z_ref.m)
         if np.max(x_w) >= (min_x-padding) and np.min(x_w) <= (max_x+padding):
-            ax1.plot(x_w, z_ref.m, color='green', alpha=0.15, linestyle=':', zorder=2)
+            ax1.plot(x_w, z_ref.m, color='green', alpha=0.12, linestyle=':', zorder=2)
 
     # --- PLOT THERMO DATA ---
-    # Gradient-colored Temperature Trace
     dt = np.diff(t_plot)
     dz = np.diff(z_plot)
     lapse_rate = - (dt / dz) 
@@ -108,7 +110,6 @@ def main():
     points = np.array([skew_t, z_plot]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
     
-    # Red = Stable/Inversion, Green = Unstable
     norm = Normalize(vmin=-3, vmax=10) 
     cmap = plt.get_cmap('RdYlGn') 
     
@@ -116,7 +117,6 @@ def main():
     lc.set_array(lapse_rate)
     ax1.add_collection(lc)
 
-    # Dewpoint updated to Black (not in RdYlGn colormap)
     ax1.plot(skew_td, z_plot, color='blue', linewidth=1, zorder=5, alpha=0.8)
 
     # X-Axis Ticks at 5°C
@@ -143,14 +143,9 @@ def main():
     ax2.spines['left'].set_visible(False)
     ax1.spines['right'].set_visible(False)
 
-    # --- REVERTED TITLE FORMAT (WITH COLOR INFO ADDED) ---
     ref_dt = datetime.datetime.fromisoformat(ds.attrs["ref_time"])
-    output_dt = ref_dt
-    lead_hours = int((output_dt - ref_dt).total_seconds() // 3600)
-
     title_str = (f"Payerne | ICON-CH1 Run: {ref_dt.strftime('%Y-%m-%d %H:%M')} UTC\n"
-                 f"Output: {output_dt.strftime('%Y-%m-%d %H:%M')} UTC (+{lead_hours}h)\n"
-                 f"Temp: Lapse Rate (Red=Stable, Green=Unstable) | Dewpoint: Black")
+                 f"Temp: Lapse Rate (Red=Stable, Green=Unstable) | Dewpoint: Blue")
     fig.suptitle(title_str, fontsize=14, y=0.96)
 
     plt.savefig("latest_skewt.png", dpi=150, bbox_inches='tight')
