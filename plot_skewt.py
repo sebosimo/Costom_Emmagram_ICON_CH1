@@ -117,7 +117,7 @@ def main():
     ax1.add_collection(lc)
 
     # Dewpoint updated to Black (not in RdYlGn colormap)
-    ax1.plot(skew_td, z_plot, color='black', linewidth=3, zorder=5, alpha=0.8)
+    ax1.plot(skew_td, z_plot, color='blue', linewidth=1, zorder=5, alpha=0.8)
 
     # X-Axis Ticks at 5°C
     visible_ticks = [t for t in np.arange(-150, 151, 5) if (min_x-padding) <= t <= (max_x+padding)]
