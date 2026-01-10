@@ -1,87 +1,102 @@
-import os, sys, datetime, xarray as xr
+import os, sys, datetime, json, xarray as xr
 import numpy as np
 from meteodatalab import ogd_api
 
 # --- Configuration ---
-LAT_TARGET, LON_TARGET = 46.81, 6.94
-CORE_VARS = ["T", "U", "V", "P"]
+# We use QV (Specific Humidity) because it's guaranteed to be on the same 
+# 80 model levels as T, U, V, and P.
+CORE_VARS = ["T", "U", "V", "P", "QV"] 
 CACHE_DIR = "cache_data"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-def get_nearest_profile(ds, lat_target, lon_target):
-    """Your Original Vertical Profile Extraction Logic"""
-    if ds is None: return None
-    data = ds if isinstance(ds, xr.DataArray) else ds[list(ds.data_vars)[0]]
-    lat_coord = 'latitude' if 'latitude' in data.coords else 'lat'
-    lon_coord = 'longitude' if 'longitude' in data.coords else 'lon'
-    horiz_dims = data.coords[lat_coord].dims
-    dist = (data[lat_coord] - lat_target)**2 + (data[lon_coord] - lon_target)**2
-    flat_idx = dist.argmin().values
-    if len(horiz_dims) == 1:
-        profile = data.isel({horiz_dims[0]: flat_idx})
-    else:
-        profile = data.stack(gp=horiz_dims).isel(gp=flat_idx)
-    return profile.squeeze().compute()
+def get_iso_horizon(total_hours):
+    days = total_hours // 24
+    hours = total_hours % 24
+    return f"P{days}DT{hours}H"
+
+def get_location_indices(ds, locations):
+    lat_name = 'latitude' if 'latitude' in ds.coords else 'lat'
+    lon_name = 'longitude' if 'longitude' in ds.coords else 'lon'
+    indices = {}
+    grid_lat = ds[lat_name].values
+    grid_lon = ds[lon_name].values
+    for name, coords in locations.items():
+        dist = (grid_lat - coords['lat'])**2 + (grid_lon - coords['lon'])**2
+        idx = int(np.argmin(dist))
+        indices[name] = idx
+    return indices
 
 def main():
-    force = os.getenv("FORCE_REFRESH") == "true"
+    if not os.path.exists("locations.json"): return
+    with open("locations.json", "r") as f: locations = json.load(f)
+
     now = datetime.datetime.now(datetime.timezone.utc)
     base_hour = (now.hour // 3) * 3
-    latest_run = now.replace(hour=base_hour, minute=0, second=0, microsecond=0)
-    times_to_try = [latest_run - datetime.timedelta(hours=i*3) for i in range(4)]
+    ref_time = now.replace(hour=base_hour, minute=0, second=0, microsecond=0)
+    max_h = 45 if ref_time.hour == 3 else 33
+    horizons = range(0, max_h + 1, 2)
+    time_tag = ref_time.strftime('%Y%m%d_%H%M')
 
-    for ref_time in times_to_try:
-        time_tag = ref_time.strftime('%Y%m%d_%H%M')
-        cache_path = os.path.join(CACHE_DIR, f"profile_{time_tag}.nc")
+    print(f"--- ICON-CH1 Run: {time_tag} | Max Horizon: {max_h}h ---")
 
-        # Skip if already downloaded (unless forced)
-        if os.path.exists(cache_path) and not force:
-            print(f">>> Run {time_tag} found in cache. Skipping download.")
-            return
+    cached_indices = None
 
-        print(f"--- Attempting Run: {ref_time.strftime('%H:%M')} UTC ---")
+    for h_int in horizons:
+        iso_h = get_iso_horizon(h_int)
+        valid_time = ref_time + datetime.timedelta(hours=h_int)
+        
+        locs_to_do = [n for n in locations.keys() 
+                      if not os.path.exists(os.path.join(CACHE_DIR, f"{n}_{time_tag}_H{h_int:02d}.nc"))]
+        if not locs_to_do: continue
+
+        print(f"\nHorizon +{h_int:02d}h: Fetching domain...")
+        domain_data = {}
+
         try:
-            profile_data = {}
             for var in CORE_VARS:
                 req = ogd_api.Request(collection="ogd-forecasting-icon-ch1", variable=var,
-                                     reference_datetime=ref_time, horizon="P0DT0H", perturbed=False)
-                res = get_nearest_profile(ogd_api.get_from_ogd(req), LAT_TARGET, LON_TARGET)
-                if res is None or res.size < 5: raise ValueError(f"Empty {var}")
-                profile_data[var] = res
-            
-            # Fetch Humidity with fallback
-            for hum_var in ["RELHUM", "QV"]:
-                try:
-                    req_h = ogd_api.Request(collection="ogd-forecasting-icon-ch1", variable=hum_var,
-                                           reference_datetime=ref_time, horizon="P0DT0H", perturbed=False)
-                    res_h = get_nearest_profile(ogd_api.get_from_ogd(req_h), LAT_TARGET, LON_TARGET)
-                    if res_h is not None and res_h.size >= 5:
-                        profile_data["HUM"], profile_data["HUM_TYPE"] = res_h, hum_var
-                        break
-                except: continue
-            
-            if "HUM" not in profile_data: raise ValueError("No Humidity data found")
+                                     reference_datetime=ref_time, horizon=iso_h, perturbed=False)
+                domain_data[var] = ogd_api.get_from_ogd(req)
 
-            # --- PREPARE FOR SAVING ---
-            # Merge into a dataset
-            ds = xr.Dataset({v: profile_data[v] for v in CORE_VARS + ["HUM"]})
-            
-            # WIPE ALL METADATA (This is what caused the truth value errors)
-            # We want just the raw numbers and coordinates
-            ds.attrs = {"HUM_TYPE": profile_data["HUM_TYPE"], "ref_time": ref_time.isoformat()}
-            for v in ds.data_vars: ds[v].attrs = {}
-            for c in ds.coords: ds[c].attrs = {}
+            if cached_indices is None:
+                cached_indices = get_location_indices(domain_data["T"], locations)
 
-            ds.to_netcdf(cache_path)
-            print(f">>> SUCCESS: Downloaded and cached {time_tag}")
-            return 
+            for name in locs_to_do:
+                idx = cached_indices[name]
+                cache_path = os.path.join(CACHE_DIR, f"{name}_{time_tag}_H{h_int:02d}.nc")
+                
+                loc_vars = {}
+                for var in CORE_VARS:
+                    ds_field = domain_data[var]
+                    # Identify the spatial dimension (ncells, cell, or values)
+                    spatial_dim = ds_field.dims[-1] 
+                    for d in ['ncells', 'cell', 'values']:
+                        if d in ds_field.dims:
+                            spatial_dim = d
+                            break
+                    
+                    # Extract 1D profile and drop all complex coordinates that break merging
+                    profile = ds_field.isel({spatial_dim: idx}).squeeze().compute()
+                    # We drop coordinates to force alignment by index
+                    loc_vars[var] = profile.drop_vars([c for c in profile.coords if c not in profile.dims])
+
+                # Merge by index (guarantees Level 1 T matches Level 1 P and Level 1 QV)
+                ds_final = xr.Dataset(loc_vars)
+                ds_final.attrs = {
+                    "location": name, 
+                    "HUM_TYPE": "QV", 
+                    "ref_time": ref_time.isoformat(), 
+                    "horizon_h": h_int,
+                    "valid_time": valid_time.isoformat()
+                }
+                
+                # Strip all remaining metadata that causes issues
+                for v in ds_final.data_vars: ds_final[v].attrs = {}
+                ds_final.to_netcdf(cache_path)
+                print(f"    -> Saved: {name}")
 
         except Exception as e:
-            print(f"Run {ref_time.strftime('%H:%M')} incomplete: {e}")
-            continue
-
-    print("Error: Could not retrieve any complete model runs.")
-    sys.exit(1)
+            print(f"  [ERROR] Horizon +{h_int}h failed: {e}")
 
 if __name__ == "__main__":
     main()
